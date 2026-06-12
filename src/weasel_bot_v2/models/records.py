@@ -22,6 +22,15 @@ class Track:
     source: str
     source_id: str
     id: int | None = None
+    relative_path: str | None = None
+    file_name: str | None = None
+    display_title: str | None = None
+    category_guess: str | None = None
+    artist_guess: str | None = None
+    extension: str | None = None
+    size_bytes: int | None = None
+    modified_at: float | None = None
+    indexed_at: str | None = None
     title: str | None = None
     artist: str | None = None
     duration_ms: int | None = None

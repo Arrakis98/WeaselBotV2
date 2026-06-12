@@ -6,13 +6,13 @@ lavalink:
   server:
     password: "${LAVALINK_SERVER_PASSWORD:change-me-locally}"
     sources:
-      youtube: true
-      bandcamp: true
-      soundcloud: true
+      youtube: false
+      bandcamp: false
+      soundcloud: false
       twitch: false
       vimeo: false
       nico: false
-      http: true
+      http: false
       local: true
     filters:
       volume: true

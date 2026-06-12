@@ -17,6 +17,7 @@ COGS = (
     "weasel_bot_v2.cogs.admin",
     "weasel_bot_v2.cogs.audio_status",
     "weasel_bot_v2.cogs.debug",
+    "weasel_bot_v2.cogs.music",
 )
 
 
@@ -98,6 +99,7 @@ class WeaselBot(commands.Bot):
                     label="main",
                     password=password,
                     secure=lavalink.secure,
+                    timeout=lavalink.timeout_seconds,
                 ),
                 timeout=30,
             )

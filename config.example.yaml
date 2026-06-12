@@ -15,8 +15,8 @@ database:
   path: "data/weasel.db"
 
 features:
-  music: false
-  local_library: false
+  music: true
+  local_library: true
   web_playback: false
   playlists: false
   history: false
@@ -44,3 +44,4 @@ lavalink:
   port_env: "LAVALINK_PORT"
   password_env: "LAVALINK_PASSWORD"
   secure: false
+  timeout_seconds: 30

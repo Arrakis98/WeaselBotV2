@@ -6,7 +6,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from weasel_bot_v2.config import DatabaseConfig
-from weasel_bot_v2.database.schema import SCHEMA_STATEMENTS
+from weasel_bot_v2.database.schema import SCHEMA_MIGRATIONS, SCHEMA_STATEMENTS
 
 
 class SQLiteDatabase:
@@ -29,6 +29,8 @@ class SQLiteDatabase:
         with self.connect() as connection:
             for statement in SCHEMA_STATEMENTS:
                 connection.execute(statement)
+            for statement in SCHEMA_MIGRATIONS:
+                _execute_migration(connection, statement)
             connection.commit()
         self.bootstrapped = True
 
@@ -41,3 +43,11 @@ class SQLiteDatabase:
             yield connection
         finally:
             connection.close()
+
+
+def _execute_migration(connection: sqlite3.Connection, statement: str) -> None:
+    try:
+        connection.execute(statement)
+    except sqlite3.OperationalError as exc:
+        if "duplicate column name" not in str(exc).lower():
+            raise

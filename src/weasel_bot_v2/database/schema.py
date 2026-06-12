@@ -24,6 +24,15 @@ SCHEMA_STATEMENTS = (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         source TEXT NOT NULL,
         source_id TEXT NOT NULL,
+        relative_path TEXT,
+        file_name TEXT,
+        display_title TEXT,
+        category_guess TEXT,
+        artist_guess TEXT,
+        extension TEXT,
+        size_bytes INTEGER,
+        modified_at REAL,
+        indexed_at TEXT,
         title TEXT,
         artist TEXT,
         duration_ms INTEGER,
@@ -81,4 +90,21 @@ SCHEMA_STATEMENTS = (
         FOREIGN KEY (added_by_user_id) REFERENCES users (user_id)
     )
     """,
+)
+
+SCHEMA_MIGRATIONS = (
+    "ALTER TABLE tracks ADD COLUMN relative_path TEXT",
+    "ALTER TABLE tracks ADD COLUMN file_name TEXT",
+    "ALTER TABLE tracks ADD COLUMN display_title TEXT",
+    "ALTER TABLE tracks ADD COLUMN category_guess TEXT",
+    "ALTER TABLE tracks ADD COLUMN artist_guess TEXT",
+    "ALTER TABLE tracks ADD COLUMN extension TEXT",
+    "ALTER TABLE tracks ADD COLUMN size_bytes INTEGER",
+    "ALTER TABLE tracks ADD COLUMN modified_at REAL",
+    "ALTER TABLE tracks ADD COLUMN indexed_at TEXT",
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_tracks_local_relative_path "
+    "ON tracks(relative_path) WHERE source = 'local'",
+    "CREATE INDEX IF NOT EXISTS idx_tracks_local_search ON tracks("
+    "source, display_title, artist_guess, category_guess, file_name, relative_path"
+    ")",
 )

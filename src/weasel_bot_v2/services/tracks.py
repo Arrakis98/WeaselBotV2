@@ -10,3 +10,6 @@ class TrackService:
 
     def remember_track(self, track: Track) -> Track:
         return self.repository.upsert(track)
+
+    def remember_local_track(self, track: Track) -> Track:
+        return self.repository.upsert_local(track)

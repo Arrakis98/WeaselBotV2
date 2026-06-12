@@ -19,6 +19,7 @@ class LavalinkConfig:
     port: int = 2333
     password: str | None = None
     secure: bool = False
+    timeout_seconds: float = 30.0
 
     @property
     def configured(self) -> bool:
@@ -150,7 +151,19 @@ def _load_lavalink_config(raw_config: dict[str, Any]) -> LavalinkConfig:
     except (TypeError, ValueError) as exc:
         raise ConfigurationError("LAVALINK_PORT must be an integer.") from exc
 
-    return LavalinkConfig(host=host, port=port, password=password, secure=secure)
+    timeout_value = os.getenv("LAVALINK_TIMEOUT_SECONDS") or lavalink.get("timeout_seconds") or 30
+    try:
+        timeout_seconds = float(timeout_value)
+    except (TypeError, ValueError) as exc:
+        raise ConfigurationError("LAVALINK_TIMEOUT_SECONDS must be a number.") from exc
+
+    return LavalinkConfig(
+        host=host,
+        port=port,
+        password=password,
+        secure=secure,
+        timeout_seconds=timeout_seconds,
+    )
 
 
 def _load_database_config(raw_config: dict[str, Any], base_dir: Path) -> DatabaseConfig:

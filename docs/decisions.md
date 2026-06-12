@@ -106,3 +106,21 @@ Initial tooling:
 - Dockerfile added later during the minimal Docker/Lavalink stack phase.
 
 The package should keep application code under `src/`, tests under `tests/`, and documentation under `docs/`. Tooling configuration should stay public-safe and must not reference private paths or infrastructure.
+
+## ADR-0010: Local Tracks Stored By Relative Path
+
+- Status: Accepted
+- Date: 2026-06-12
+
+Local music tracks are identified in SQLite by their path relative to the
+configured music root.
+
+The bot and Lavalink containers should both see the music library at the same
+container path, normally `/music`, but the database must not store host paths
+such as machine-specific mount locations. For example, a file visible in the
+container as `/music/France/Renaud/Mistral gagnant.mp3` is stored as
+`France/Renaud/Mistral gagnant.mp3`.
+
+This keeps the repository public-safe, makes database backups portable across
+hosts, and lets private host mount paths remain in ignored local deployment
+configuration.

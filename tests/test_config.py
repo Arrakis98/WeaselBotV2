@@ -33,6 +33,7 @@ def test_env_values_override_defaults(tmp_path: Path, monkeypatch: pytest.Monkey
     monkeypatch.setenv("LAVALINK_HOST", "audio")
     monkeypatch.setenv("LAVALINK_PORT", "2444")
     monkeypatch.setenv("LAVALINK_PASSWORD", "local-password")
+    monkeypatch.setenv("LAVALINK_TIMEOUT_SECONDS", "45")
 
     settings = Settings.load(tmp_path)
 
@@ -41,6 +42,7 @@ def test_env_values_override_defaults(tmp_path: Path, monkeypatch: pytest.Monkey
     assert settings.lavalink.host == "audio"
     assert settings.lavalink.port == 2444
     assert settings.lavalink.password == "local-password"
+    assert settings.lavalink.timeout_seconds == 45
     assert settings.lavalink.configured is True
 
 
@@ -68,6 +70,7 @@ features:
 lavalink:
   host: localhost
   port: 2333
+  timeout_seconds: 35
   secure: false
 """,
         encoding="utf-8",
@@ -86,6 +89,7 @@ lavalink:
     assert settings.features.music is False
     assert settings.lavalink.host == "localhost"
     assert settings.lavalink.port == 2333
+    assert settings.lavalink.timeout_seconds == 35
     assert settings.lavalink.password is None
 
 

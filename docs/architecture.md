@@ -12,7 +12,9 @@ The bot container will run the Python application using `discord.py` for Discord
 
 Lavalink runs as a separate Docker service. The bot connects to it through an internal Docker network using `LAVALINK_HOST`, `LAVALINK_PORT`, and `LAVALINK_PASSWORD`.
 
-Lavalink should not be exposed publicly by default.
+Lavalink should not be exposed publicly by default. It should remain reachable by
+the bot on the internal Docker network, while also having outbound egress network
+access for Discord voice connections.
 
 ## Storage
 
@@ -47,6 +49,24 @@ Initial schema bootstrap creates:
 
 The local music library should be mounted read-only into the bot and Lavalink containers. The bot may index and play the library, but it must not modify original music files.
 
+Phase 3 stores local tracks by path relative to the configured music root. For
+Docker runtime the root is normally `/music`, and both the bot and Lavalink
+containers must mount the same host library at that same container path. The
+database stores values such as `France/Renaud/Mistral gagnant.mp3`, not host
+paths.
+
+The local scanner supports mixed recursive layouts:
+
+- files directly under `/music`
+- `/music/<artist>/<file>`
+- `/music/<category>/<artist>/<file>`
+- deeper paths, preserving the full relative path
+
+It does not require ID3 tags. Initial metadata guesses come from the relative
+path only: depth 1 has no artist/category, depth 2 guesses the first folder as
+artist, and depth 3 or greater guesses the first folder as category and the
+second as artist.
+
 ## Application Layers
 
 Phase 2 package boundaries:
@@ -67,6 +87,12 @@ Handles slash commands first, with buttons, select menus, embeds, and later moda
 ### Audio Service
 
 Owns playback state, Lavalink connection handling, queue operations, and audio errors. The preferred initial Lavalink Python client is Mafic, wrapped behind project-owned audio interfaces so the rest of the bot is not coupled directly to client internals. This choice remains reversible until Phase 1 validates an actual Docker/Lavalink connection and minimal playback test.
+
+Phase 3 local playback is intentionally minimal: `/play_local` searches indexed
+local tracks, joins the requester's voice channel, and asks Mafic/Lavalink to
+play a single local path visible inside the Lavalink container. If local file
+resolution fails at runtime, the command reports a clear error instead of
+pretending playback succeeded.
 
 ### Playlist Service
 

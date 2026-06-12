@@ -17,6 +17,7 @@ services:
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
+      # Replace ./music in a private local compose file if your host library lives elsewhere.
       - ./music:/music:ro
     restart: unless-stopped
 
@@ -27,8 +28,10 @@ services:
       LAVALINK_SERVER_PASSWORD: "${LAVALINK_PASSWORD:-change-me-locally}"
     networks:
       - weasel-internal
+      - weasel-egress
     volumes:
       - ./lavalink/application.example.yml:/opt/Lavalink/application.yml:ro
+      # Lavalink must see the same container path as the bot for local playback.
       - ./music:/music:ro
     restart: unless-stopped
 

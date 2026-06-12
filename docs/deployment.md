@@ -1,7 +1,7 @@
 # Deployment Notes
 
-These notes describe the Phase 1 local Docker/Lavalink stack. Music playback is
-not implemented yet.
+These notes describe the local Docker/Lavalink stack and Phase 3 local music
+playback requirements.
 
 ## Local Development
 
@@ -18,12 +18,22 @@ The intended local stack is:
 - Python Discord bot container.
 - Lavalink v4 container.
 - Internal Docker network.
+- Egress Docker network for both bot and Lavalink outbound traffic.
 - SQLite database stored in a local runtime data directory. The public example
   config defaults to `data/weasel.db`; generated database files must remain
   ignored and outside Git.
-- Local music library mounted read-only.
+- Local music library mounted read-only at `/music` in both the bot and
+  Lavalink containers.
 
-Do not expose Lavalink publicly by default.
+Do not expose Lavalink publicly by default. The bot should reach Lavalink on the
+internal Docker network, and `compose.example.yml` must not publish Lavalink port
+`2333` to the host. Lavalink still needs outbound egress network access so it can
+communicate with Discord voice infrastructure.
+
+For local music playback, keep the bot and Lavalink mounts consistent. The
+public compose example uses `./music:/music:ro` as a safe placeholder. If your
+real host library lives elsewhere, put that host path only in a private ignored
+compose file and still mount it as `/music:ro` in both services.
 
 ## Phase 1 Local Docker Stack
 
@@ -55,21 +65,43 @@ docker compose up --build
 ```
 
 The bot service builds from the repository `Dockerfile`. The Lavalink service uses
-a Lavalink v4 container image and is attached only to the internal Docker network.
-The bot can reach Discord through its egress network and Lavalink through the
-internal network.
+a Lavalink v4 container image. Both bot and Lavalink attach to the internal
+network for bot-to-Lavalink traffic and to the egress network for outbound
+Discord voice connectivity.
 
 Expected commands after Discord sync completes:
 
 - `/ping`
 - `/audio_status`
 - `/bot_status`
+- `/library_scan`
+- `/library_stats`
+- `/search_local`
+- `/play_local`
 
 `/audio_status` only reports whether the Phase 1 Mafic/Lavalink connection appears
 available. It does not play music.
 
 `/bot_status` reports safe bot, database, Lavalink, and feature-flag status. It
 must not expose tokens, passwords, private paths, or runtime data.
+
+`/play_local` is one-track local playback for Phase 3. It requires the requester
+to be in a voice channel, Lavalink to be connected, and Lavalink to be able to
+read the same `/music` path as the bot.
+
+For Lavalink v4, local playback uses a plain absolute file path visible inside
+the Lavalink container, such as `/music/Artist/song.mp3`. Do not use `file:`,
+`file:///`, `local:`, or a host path for `/play_local`.
+
+The example config sets `lavalink.timeout_seconds` to `30` so Mafic's REST calls
+have enough time for Lavalink to resolve local files on slower disks.
+
+## Troubleshooting
+
+If `/library_scan` and `/search_local` work, but `/play_local` joins voice and
+then times out, check that the Lavalink service is attached to the egress network.
+Local file loading can succeed through the internal bot-to-Lavalink network while
+audio playback still fails if Lavalink cannot reach Discord voice infrastructure.
 
 ## Future Arcadia Deployment
 

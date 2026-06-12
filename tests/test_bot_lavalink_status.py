@@ -46,6 +46,7 @@ async def test_lavalink_connection_failure_status(monkeypatch: pytest.MonkeyPatc
             self.bot = bot
 
         async def create_node(self, **kwargs: object) -> None:
+            assert kwargs["timeout"] == 30.0
             raise RuntimeError("simulated connection failure")
 
     monkeypatch.setitem(sys.modules, "mafic", SimpleNamespace(NodePool=FakeNodePool))

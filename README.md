@@ -19,8 +19,8 @@ This repository is designed to be public-repository safe. It must not contain Di
 
 ## Current Status
 
-Phase 1 provides a minimal Docker/Lavalink stack and a small Discord bot skeleton.
-It includes `/ping` and `/audio_status`; music playback is not implemented yet.
+Phase 3 provides the Docker/Lavalink stack, core SQLite architecture, local
+library indexing, local search, and minimal one-track `/play_local` playback.
 
 ## Selected Stack
 
@@ -79,6 +79,11 @@ Expected Discord slash commands after the bot logs in:
 
 - `/ping`
 - `/audio_status`
+- `/bot_status`
+- `/library_scan`
+- `/library_stats`
+- `/search_local`
+- `/play_local`
 
 Lavalink is only reachable on the internal Docker network by default. The example
 compose file mounts `./music` as read-only example storage and does not expose
