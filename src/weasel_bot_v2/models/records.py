@@ -1,0 +1,61 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class GuildSettings:
+    guild_id: int
+    command_prefix: str | None = None
+    locale: str | None = None
+    dj_role_id: int | None = None
+
+
+@dataclass(frozen=True)
+class UserRecord:
+    user_id: int
+    display_name: str | None = None
+
+
+@dataclass(frozen=True)
+class Track:
+    source: str
+    source_id: str
+    id: int | None = None
+    title: str | None = None
+    artist: str | None = None
+    duration_ms: int | None = None
+
+
+@dataclass(frozen=True)
+class PlayHistoryEntry:
+    guild_id: int
+    user_id: int | None = None
+    track_id: int | None = None
+    context: str | None = None
+    id: int | None = None
+
+
+@dataclass(frozen=True)
+class Rating:
+    guild_id: int
+    user_id: int
+    track_id: int
+    rating: int
+
+
+@dataclass(frozen=True)
+class Playlist:
+    owner_user_id: int
+    name: str
+    id: int | None = None
+    guild_id: int | None = None
+    description: str | None = None
+
+
+@dataclass(frozen=True)
+class PlaylistItem:
+    playlist_id: int
+    position: int
+    track_id: int
+    added_by_user_id: int | None = None

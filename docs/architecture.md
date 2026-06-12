@@ -29,11 +29,36 @@ SQLite is the first persistent storage target. It should store bot data such as:
 
 Database files are local runtime data and must not be committed.
 
+Phase 2 uses a small project-owned SQLite layer under `weasel_bot_v2.database`.
+The database path comes from configuration and defaults to `data/weasel.db` for
+local development. Tests must use temporary SQLite files only.
+
+Initial schema bootstrap creates:
+
+- `guild_settings`
+- `users`
+- `tracks`
+- `play_history`
+- `ratings`
+- `playlists`
+- `playlist_items`
+
 ### Read-Only Music Mount
 
 The local music library should be mounted read-only into the bot and Lavalink containers. The bot may index and play the library, but it must not modify original music files.
 
 ## Application Layers
+
+Phase 2 package boundaries:
+
+- `core`: application wiring helpers.
+- `database`: SQLite connection factory and schema bootstrap.
+- `models`: typed records shared by services and repositories.
+- `repositories`: persistence operations for guild settings, users, tracks,
+  playlists, history, and ratings.
+- `services`: workflow-facing wrappers over repositories.
+- `cogs`: Discord slash command modules.
+- `utils`: small shared utilities.
 
 ### Discord Interactions Layer
 

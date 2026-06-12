@@ -8,7 +8,7 @@ from types import SimpleNamespace
 import pytest
 
 from weasel_bot_v2.bot import WeaselBot
-from weasel_bot_v2.config import BotConfig, LavalinkConfig, Settings
+from weasel_bot_v2.config import BotConfig, DatabaseConfig, FeatureFlags, LavalinkConfig, Settings
 
 
 def _settings(lavalink: LavalinkConfig) -> Settings:
@@ -21,6 +21,8 @@ def _settings(lavalink: LavalinkConfig) -> Settings:
             music_library=Path("/tmp/weasel-music"),
         ),
         lavalink=lavalink,
+        database=DatabaseConfig(path=Path("/tmp/weasel-data/weasel-test.db")),
+        features=FeatureFlags(),
     )
 
 

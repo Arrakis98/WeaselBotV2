@@ -28,9 +28,51 @@ class LavalinkConfig:
 @dataclass(frozen=True)
 class BotConfig:
     name: str = "Weasel Bot V2"
-    data_dir: Path = Path("/app/data")
-    logs_dir: Path = Path("/app/logs")
-    music_library: Path = Path("/music")
+    data_dir: Path = Path("data")
+    logs_dir: Path = Path("logs")
+    music_library: Path = Path("music")
+
+
+@dataclass(frozen=True)
+class DatabaseConfig:
+    path: Path = Path("data/weasel.db")
+
+    @property
+    def configured(self) -> bool:
+        return bool(self.path)
+
+
+@dataclass(frozen=True)
+class FeatureFlags:
+    music: bool = False
+    local_library: bool = False
+    web_playback: bool = False
+    playlists: bool = False
+    history: bool = False
+    ratings: bool = False
+    legacy_json_import: bool = False
+    rich_discord_ui: bool = False
+    ai: bool = False
+    chaos_mode: bool = False
+
+    def safe_summary(self) -> str:
+        enabled = [
+            name
+            for name, value in (
+                ("music", self.music),
+                ("local_library", self.local_library),
+                ("web_playback", self.web_playback),
+                ("playlists", self.playlists),
+                ("history", self.history),
+                ("ratings", self.ratings),
+                ("legacy_json_import", self.legacy_json_import),
+                ("rich_discord_ui", self.rich_discord_ui),
+                ("ai", self.ai),
+                ("chaos_mode", self.chaos_mode),
+            )
+            if value
+        ]
+        return ", ".join(enabled) if enabled else "none"
 
 
 @dataclass(frozen=True)
@@ -39,6 +81,8 @@ class Settings:
     discord_test_guild_id: int | None
     bot: BotConfig
     lavalink: LavalinkConfig
+    database: DatabaseConfig
+    features: FeatureFlags
 
     @classmethod
     def load(cls, cwd: Path | None = None, *, require_token: bool = True) -> Settings:
@@ -52,8 +96,10 @@ class Settings:
         settings = cls(
             discord_token=_clean_secret(os.getenv("DISCORD_TOKEN")),
             discord_test_guild_id=_optional_int(os.getenv("DISCORD_TEST_GUILD_ID")),
-            bot=_load_bot_config(raw_config),
+            bot=_load_bot_config(raw_config, base_dir),
             lavalink=_load_lavalink_config(raw_config),
+            database=_load_database_config(raw_config, base_dir),
+            features=_load_feature_flags(raw_config),
         )
 
         if require_token and not settings.discord_token:
@@ -77,15 +123,15 @@ def _load_yaml(path: Path) -> dict[str, Any] | None:
     return data
 
 
-def _load_bot_config(raw_config: dict[str, Any]) -> BotConfig:
+def _load_bot_config(raw_config: dict[str, Any], base_dir: Path) -> BotConfig:
     bot = _mapping(raw_config.get("bot"))
     paths = _mapping(raw_config.get("paths"))
 
     return BotConfig(
         name=str(bot.get("name") or "Weasel Bot V2"),
-        data_dir=Path(str(paths.get("data_dir") or "/app/data")),
-        logs_dir=Path(str(paths.get("logs_dir") or "/app/logs")),
-        music_library=Path(str(paths.get("music_library") or "/music")),
+        data_dir=_path_value(paths.get("data_dir"), base_dir / "data", base_dir),
+        logs_dir=_path_value(paths.get("logs_dir"), base_dir / "logs", base_dir),
+        music_library=_path_value(paths.get("music_library"), base_dir / "music", base_dir),
     )
 
 
@@ -107,8 +153,50 @@ def _load_lavalink_config(raw_config: dict[str, Any]) -> LavalinkConfig:
     return LavalinkConfig(host=host, port=port, password=password, secure=secure)
 
 
+def _load_database_config(raw_config: dict[str, Any], base_dir: Path) -> DatabaseConfig:
+    database = _mapping(raw_config.get("database"))
+    return DatabaseConfig(
+        path=_path_value(database.get("path"), base_dir / "data" / "weasel.db", base_dir)
+    )
+
+
+def _load_feature_flags(raw_config: dict[str, Any]) -> FeatureFlags:
+    features = _mapping(raw_config.get("features"))
+    chaos_mode = _mapping(raw_config.get("chaos_mode"))
+    return FeatureFlags(
+        music=_bool_value(features.get("music"), False),
+        local_library=_bool_value(features.get("local_library"), False),
+        web_playback=_bool_value(features.get("web_playback"), False),
+        playlists=_bool_value(features.get("playlists"), False),
+        history=_bool_value(features.get("history"), False),
+        ratings=_bool_value(features.get("ratings"), False),
+        legacy_json_import=_bool_value(features.get("legacy_json_import"), False),
+        rich_discord_ui=_bool_value(features.get("rich_discord_ui"), False),
+        ai=_bool_value(features.get("ai"), False),
+        chaos_mode=_bool_value(chaos_mode.get("enabled"), False),
+    )
+
+
 def _mapping(value: object) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
+
+
+def _path_value(value: object, default: Path, base_dir: Path) -> Path:
+    if value is None:
+        return default
+
+    path = Path(str(value))
+    if path.is_absolute():
+        return path
+    return base_dir / path
+
+
+def _bool_value(value: object, default: bool) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _optional_int(value: str | None) -> int | None:

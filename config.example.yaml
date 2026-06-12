@@ -5,18 +5,22 @@ bot:
   test_guild_id_env: "DISCORD_TEST_GUILD_ID"
 
 paths:
-  data_dir: "/app/data"
+  # Runtime data is ignored by Git. In Docker this resolves under /app.
+  data_dir: "data"
   music_library: "/music"
-  logs_dir: "/app/logs"
+  logs_dir: "logs"
 
 database:
-  path: "/app/data/weasel-bot-v2.sqlite"
+  # Default local SQLite database path. Do not commit generated database files.
+  path: "data/weasel.db"
 
 features:
   music: false
   local_library: false
+  web_playback: false
   playlists: false
   history: false
+  ratings: false
   legacy_json_import: false
   rich_discord_ui: false
   ai: false

@@ -18,7 +18,9 @@ The intended local stack is:
 - Python Discord bot container.
 - Lavalink v4 container.
 - Internal Docker network.
-- SQLite database stored in a local runtime data directory.
+- SQLite database stored in a local runtime data directory. The public example
+  config defaults to `data/weasel.db`; generated database files must remain
+  ignored and outside Git.
 - Local music library mounted read-only.
 
 Do not expose Lavalink publicly by default.
@@ -61,9 +63,13 @@ Expected commands after Discord sync completes:
 
 - `/ping`
 - `/audio_status`
+- `/bot_status`
 
 `/audio_status` only reports whether the Phase 1 Mafic/Lavalink connection appears
 available. It does not play music.
+
+`/bot_status` reports safe bot, database, Lavalink, and feature-flag status. It
+must not expose tokens, passwords, private paths, or runtime data.
 
 ## Future Arcadia Deployment
 

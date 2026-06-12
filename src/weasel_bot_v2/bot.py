@@ -8,6 +8,7 @@ import discord
 from discord.ext import commands
 
 from weasel_bot_v2.config import Settings
+from weasel_bot_v2.database import SQLiteDatabase
 from weasel_bot_v2.logging_config import configure_logging
 
 LOGGER = logging.getLogger(__name__)
@@ -15,6 +16,7 @@ LOGGER = logging.getLogger(__name__)
 COGS = (
     "weasel_bot_v2.cogs.admin",
     "weasel_bot_v2.cogs.audio_status",
+    "weasel_bot_v2.cogs.debug",
 )
 
 
@@ -26,6 +28,7 @@ class WeaselBot(commands.Bot):
 
         super().__init__(command_prefix=commands.when_mentioned, intents=intents)
         self.settings = settings
+        self.database = SQLiteDatabase(settings.database)
         self.lavalink_pool: Any | None = None
         self.lavalink_available = False
         self.lavalink_status = "not configured"
@@ -34,6 +37,9 @@ class WeaselBot(commands.Bot):
         self._lavalink_connection_task: asyncio.Task[None] | None = None
 
     async def setup_hook(self) -> None:
+        self.database.initialize()
+        LOGGER.info("SQLite database schema is ready.")
+
         for cog in COGS:
             await self.load_extension(cog)
 
