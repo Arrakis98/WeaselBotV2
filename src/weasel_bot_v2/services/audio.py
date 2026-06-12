@@ -45,6 +45,15 @@ class AudioPlaybackService:
         if guild is None:
             return PlaybackResult(ok=False, message="This command can only be used in a server.")
 
+        state = self.bot.player_states.get_or_create(guild.id)
+        if state.has_track:
+            position = state.enqueue(track)
+            title = track.display_title or track.file_name or track.relative_path
+            return PlaybackResult(
+                ok=True,
+                message=f"Added to queue at position {position}: {title}",
+            )
+
         member = interaction.user
         if not isinstance(member, discord.Member) or member.voice is None:
             return PlaybackResult(
@@ -58,6 +67,23 @@ class AudioPlaybackService:
                 ok=False,
                 message="Join a voice channel before using /play_local.",
             )
+
+        player = await self._connect_player(guild, channel)
+        result = await self.play_track_on_player(guild=guild, player=player, track=track)
+        if result.ok:
+            title = track.display_title or track.file_name or track.relative_path
+            return PlaybackResult(ok=True, message=f"Now playing: {title}")
+        return result
+
+    async def play_track_on_player(
+        self,
+        *,
+        guild: discord.Guild,
+        player: object,
+        track: Track,
+    ) -> PlaybackResult:
+        if not self.bot.lavalink_available:
+            return PlaybackResult(ok=False, message="Lavalink is not connected.")
 
         if not track.relative_path:
             return PlaybackResult(ok=False, message="The selected track is missing a local path.")
@@ -80,15 +106,6 @@ class AudioPlaybackService:
         try:
             import mafic
 
-            voice_client = guild.voice_client
-            if voice_client is None:
-                LOGGER.info("Connecting to voice for local playback.")
-                player = await channel.connect(cls=mafic.Player)
-                LOGGER.info("Voice connect succeeded for local playback.")
-            else:
-                player = voice_client
-                LOGGER.info("Reusing existing voice client for local playback.")
-
             player = cast(Any, player)
             if not hasattr(player, "play"):
                 return PlaybackResult(
@@ -106,7 +123,7 @@ class AudioPlaybackService:
                 relative.as_posix(),
             )
             LOGGER.info("Starting player.play for local relative_path=%s.", relative.as_posix())
-            await player.play(lavalink_track)
+            await cast(Any, player).play(lavalink_track)
             state = self.bot.player_states.get_or_create(guild.id)
             await self._apply_volume(player, state.volume)
             state.set_current_track(track)
@@ -130,6 +147,19 @@ class AudioPlaybackService:
 
         title = track.display_title or track.file_name or track.relative_path
         return PlaybackResult(ok=True, message=f"Playing local track: {title}")
+
+    async def _connect_player(self, guild: discord.Guild, channel: object) -> object:
+        import mafic
+
+        voice_client = guild.voice_client
+        if voice_client is None:
+            LOGGER.info("Connecting to voice for local playback.")
+            player = await cast(Any, channel).connect(cls=mafic.Player)
+            LOGGER.info("Voice connect succeeded for local playback.")
+            return player
+
+        LOGGER.info("Reusing existing voice client for local playback.")
+        return voice_client
 
     async def pause(self, guild: discord.Guild) -> PlaybackResult:
         state = self._active_state(guild)
@@ -188,7 +218,7 @@ class AudioPlaybackService:
                 message=f"Could not stop playback: {exc.__class__.__name__}.",
             )
 
-        self.bot.player_states.clear(guild.id)
+        state.clear_current_track()
         return PlaybackResult(ok=True, message="Stopped.")
 
     async def leave(self, guild: discord.Guild) -> PlaybackResult:
@@ -209,6 +239,86 @@ class AudioPlaybackService:
 
         self.bot.player_states.clear(guild.id)
         return PlaybackResult(ok=True, message="Left voice.")
+
+    async def skip(self, guild: discord.Guild) -> PlaybackResult:
+        state = self._active_state(guild)
+        if state is None:
+            return PlaybackResult(ok=False, message="Nothing is playing.")
+
+        player = self._active_player(guild)
+        if player is None:
+            return PlaybackResult(ok=False, message="The bot is not connected to a player.")
+
+        next_track = state.pop_next()
+        if next_track is None:
+            try:
+                if hasattr(player, "stop"):
+                    await cast(Any, player).stop()
+            except Exception as exc:  # noqa: BLE001 - controls should report clean failures.
+                return PlaybackResult(
+                    ok=False,
+                    message=f"Could not skip playback: {exc.__class__.__name__}.",
+                )
+            state.clear_current_track()
+            return PlaybackResult(ok=True, message="Skipped. The queue is empty.")
+
+        return await self.play_track_on_player(guild=guild, player=player, track=next_track)
+
+    async def back(self, guild: discord.Guild) -> PlaybackResult:
+        state = self._active_state(guild)
+        if state is None:
+            return PlaybackResult(ok=False, message="Nothing is playing.")
+
+        player = self._active_player(guild)
+        if player is None:
+            return PlaybackResult(ok=False, message="The bot is not connected to a player.")
+
+        previous = state.back_to_previous()
+        if previous is None:
+            return PlaybackResult(ok=False, message="No previous track is available.")
+
+        state.current_track = None
+        return await self.play_track_on_player(guild=guild, player=player, track=previous)
+
+    def clear_queue(self, guild_id: int) -> PlaybackResult:
+        state = self.bot.player_states.get_or_create(guild_id)
+        cleared = state.clear_queue()
+        return PlaybackResult(ok=True, message=f"Cleared {cleared} queued track(s).")
+
+    def remove_from_queue(self, guild_id: int, position: int) -> PlaybackResult:
+        state = self.bot.player_states.get_or_create(guild_id)
+        removed = state.remove_queue_item(position)
+        if removed is None:
+            return PlaybackResult(ok=False, message="No queued track exists at that position.")
+        title = removed.display_title or removed.file_name or removed.relative_path
+        return PlaybackResult(ok=True, message=f"Removed from queue: {title}")
+
+    async def handle_track_end(self, event: object) -> None:
+        reason_obj = getattr(event, "reason", "")
+        reason = getattr(reason_obj, "value", str(reason_obj))
+        if reason != "finished":
+            return
+
+        player = getattr(event, "player", None)
+        guild = getattr(player, "guild", None)
+        if guild is None:
+            return
+
+        state = self.bot.player_states.get(guild.id)
+        if state is None or state.current_track is None:
+            return
+
+        if state.loop_current:
+            track = state.current_track
+            state.current_track = None
+        else:
+            track = state.pop_next()
+
+        if track is None:
+            state.clear_current_track()
+            return
+
+        await self.play_track_on_player(guild=guild, player=player, track=track)
 
     async def change_volume(self, guild: discord.Guild, delta: int) -> PlaybackResult:
         state = self._active_state(guild)

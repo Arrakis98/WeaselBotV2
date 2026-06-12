@@ -95,14 +95,14 @@ resolution fails at runtime, the command reports a clear error instead of
 pretending playback succeeded.
 
 Phase 3.5 adds basic player controls and a Discord Now Playing control panel for
-the active local track. The bot tracks minimal per-guild state only: current
-track, paused state, volume, and loop-current preference. It does not introduce a
-queue, ratings, recommendations, web playback, autoplay, or playlist workflows.
+the active local track. Phase 4 extends the in-memory per-guild player state with
+an upcoming queue and recently played history for local tracks. `/play_local`
+starts playback when idle and enqueues while active. Skip/back controls and
+natural track-end auto-advance operate on this in-memory queue.
 
-Planned controls for later phases include skip/back, like/superlike,
-dislike/superdislike, and same-artist actions. Current-track loop state is
-captured in the control panel, while automatic replay is deferred until the bot
-has a fuller playback event layer.
+The Phase 4 queue is not persisted to SQLite yet. Ratings, recommendations, web
+playback, autoplay radio, playlist workflows, like/superlike,
+dislike/superdislike, and same-artist actions remain planned for later phases.
 
 ### Playlist Service
 

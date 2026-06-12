@@ -83,6 +83,11 @@ Expected commands after Discord sync completes:
 - `/stop`
 - `/leave`
 - `/now_playing`
+- `/queue`
+- `/skip`
+- `/back`
+- `/clear_queue`
+- `/remove_from_queue`
 
 `/audio_status` only reports whether the Phase 1 Mafic/Lavalink connection appears
 available. It does not play music.
@@ -101,10 +106,10 @@ the Lavalink container, such as `/music/Artist/song.mp3`. Do not use `file:`,
 The example config sets `lavalink.timeout_seconds` to `30` so Mafic's REST calls
 have enough time for Lavalink to resolve local files on slower disks.
 
-Phase 3.5 player controls are intentionally narrow. Pause, resume, stop, leave,
-volume, and a Now Playing panel are available for the current local track. Queue
-navigation, rating buttons, same-artist actions, and automatic loop replay are
-planned for later phases.
+Phase 4 adds local queue navigation on top of the Phase 3.5 controls. Queue state
+is in memory per guild and is lost when the bot restarts. Like/superlike,
+dislike/superdislike, same-artist actions, persisted playlists, web playback, and
+autoplay radio are planned for later phases.
 
 ## Troubleshooting
 

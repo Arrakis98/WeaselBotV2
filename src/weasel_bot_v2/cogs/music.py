@@ -131,6 +131,56 @@ class MusicCog(commands.Cog):
             view=NowPlayingView(self.bot, state),
         )
 
+    @app_commands.command(name="queue", description="Show the current local playback queue.")
+    async def show_queue(self, interaction: discord.Interaction) -> None:
+        guild = interaction.guild
+        if guild is None:
+            await interaction.response.send_message(
+                "This command can only be used in a server.",
+                ephemeral=True,
+            )
+            return
+
+        state = self.bot.player_states.get(guild.id)
+        await interaction.response.send_message(format_queue(state), ephemeral=True)
+
+    @app_commands.command(name="skip", description="Skip to the next queued local track.")
+    async def skip_track(self, interaction: discord.Interaction) -> None:
+        await self._run_player_action(interaction, lambda service, guild: service.skip(guild))
+
+    @app_commands.command(name="back", description="Go back to the previous local track.")
+    async def back_track(self, interaction: discord.Interaction) -> None:
+        await self._run_player_action(interaction, lambda service, guild: service.back(guild))
+
+    @app_commands.command(name="clear_queue", description="Clear upcoming local tracks.")
+    async def clear_queue(self, interaction: discord.Interaction) -> None:
+        guild = interaction.guild
+        if guild is None:
+            await interaction.response.send_message(
+                "This command can only be used in a server.",
+                ephemeral=True,
+            )
+            return
+
+        result = self._playback_service().clear_queue(guild.id)
+        await interaction.response.send_message(result.message, ephemeral=True)
+
+    @app_commands.command(
+        name="remove_from_queue",
+        description="Remove a queued track by position.",
+    )
+    async def remove_from_queue(self, interaction: discord.Interaction, position: int) -> None:
+        guild = interaction.guild
+        if guild is None:
+            await interaction.response.send_message(
+                "This command can only be used in a server.",
+                ephemeral=True,
+            )
+            return
+
+        result = self._playback_service().remove_from_queue(guild.id, position)
+        await interaction.response.send_message(result.message, ephemeral=True)
+
     def _library_service(self) -> LocalLibraryService:
         return LocalLibraryService(
             music_root=self.bot.settings.bot.music_library,
@@ -193,9 +243,51 @@ def build_now_playing_embed(state: GuildPlayerState) -> discord.Embed:
     embed.add_field(name="Status", value="Paused" if state.paused else "Playing", inline=True)
     embed.add_field(name="Volume", value=f"{state.volume}%", inline=True)
     embed.add_field(name="Loop", value="On" if state.loop_current else "Off", inline=True)
+    embed.add_field(name="Queue", value=f"{state.queue_length} upcoming", inline=True)
+    next_track = state.next_track_preview()
+    embed.add_field(
+        name="Next",
+        value=track_title(next_track) if next_track is not None else "Nothing queued",
+        inline=False,
+    )
+    embed.add_field(
+        name="Previous",
+        value="Available" if state.can_go_back else "None",
+        inline=True,
+    )
     if track is not None and track.relative_path:
         embed.set_footer(text=track.relative_path)
     return embed
+
+
+def format_queue(state: GuildPlayerState | None, *, limit: int = 10) -> str:
+    if state is None or (not state.has_track and state.queue_length == 0):
+        return "Nothing is playing and the queue is empty."
+
+    lines = [f"Now playing: {track_title(state.current_track)}"]
+    if not state.upcoming:
+        lines.append("Queue is empty.")
+        return "\n".join(lines)
+
+    lines.append("Upcoming:")
+    for index, track in enumerate(state.upcoming[:limit], start=1):
+        lines.append(f"{index}. {track_title(track)}")
+    remaining = len(state.upcoming) - limit
+    if remaining > 0:
+        lines.append(f"...and {remaining} more.")
+    return "\n".join(lines)
+
+
+def track_title(track: object | None) -> str:
+    if track is None:
+        return "None"
+    local_track = cast(Any, track)
+    return (
+        local_track.display_title
+        or local_track.file_name
+        or local_track.relative_path
+        or "Unknown local track"
+    )
 
 
 class NowPlayingView(discord.ui.View):
@@ -225,6 +317,42 @@ class NowPlayingView(discord.ui.View):
             return
 
         result = await (playback.resume(guild) if state.paused else playback.pause(guild))
+        await self._finish_control(interaction, result)
+
+    @discord.ui.button(label="Back", emoji="⏮️", style=discord.ButtonStyle.secondary)
+    async def back_button(
+        self,
+        interaction: discord.Interaction,
+        button: discord.ui.Button[NowPlayingView],
+    ) -> None:
+        guild = interaction.guild
+        if guild is None:
+            await interaction.response.send_message(
+                "This control can only be used in a server.",
+                ephemeral=True,
+            )
+            return
+
+        playback = AudioPlaybackService(self.bot, self.bot.settings.bot.music_library)
+        result = await playback.back(guild)
+        await self._finish_control(interaction, result)
+
+    @discord.ui.button(label="Skip", emoji="⏭️", style=discord.ButtonStyle.secondary)
+    async def skip_button(
+        self,
+        interaction: discord.Interaction,
+        button: discord.ui.Button[NowPlayingView],
+    ) -> None:
+        guild = interaction.guild
+        if guild is None:
+            await interaction.response.send_message(
+                "This control can only be used in a server.",
+                ephemeral=True,
+            )
+            return
+
+        playback = AudioPlaybackService(self.bot, self.bot.settings.bot.music_library)
+        result = await playback.skip(guild)
         await self._finish_control(interaction, result)
 
     @discord.ui.button(label="Stop", emoji="⏹️", style=discord.ButtonStyle.danger)

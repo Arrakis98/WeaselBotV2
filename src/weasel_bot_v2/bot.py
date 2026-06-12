@@ -10,6 +10,7 @@ from discord.ext import commands
 from weasel_bot_v2.config import Settings
 from weasel_bot_v2.database import SQLiteDatabase
 from weasel_bot_v2.logging_config import configure_logging
+from weasel_bot_v2.services.audio import AudioPlaybackService
 from weasel_bot_v2.services.player_state import PlayerStateStore
 
 LOGGER = logging.getLogger(__name__)
@@ -117,6 +118,9 @@ class WeaselBot(commands.Bot):
         self.lavalink_status = "connected"
         self.lavalink_last_error = None
         LOGGER.info("Lavalink/Mafic connection is available at %s:%s", lavalink.host, lavalink.port)
+
+    async def on_track_end(self, event: object) -> None:
+        await AudioPlaybackService(self, self.settings.bot.music_library).handle_track_end(event)
 
     async def _sync_commands(self) -> None:
         if self.settings.discord_test_guild_id is not None:

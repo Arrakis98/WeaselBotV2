@@ -19,9 +19,10 @@ This repository is designed to be public-repository safe. It must not contain Di
 
 ## Current Status
 
-Phase 3.5 provides the Docker/Lavalink stack, core SQLite architecture, local
-library indexing, local search, one-track `/play_local` playback, basic player
-controls, and a Discord Now Playing control panel.
+Phase 4 provides the Docker/Lavalink stack, core SQLite architecture, local
+library indexing, local search, local `/play_local` playback, basic player
+controls, a Discord Now Playing control panel, and an in-memory per-guild local
+playback queue.
 
 ## Selected Stack
 
@@ -90,6 +91,11 @@ Expected Discord slash commands after the bot logs in:
 - `/stop`
 - `/leave`
 - `/now_playing`
+- `/queue`
+- `/skip`
+- `/back`
+- `/clear_queue`
+- `/remove_from_queue`
 
 Lavalink is only reachable on the internal Docker network by default. The example
 compose file mounts `./music` as read-only example storage and does not expose
