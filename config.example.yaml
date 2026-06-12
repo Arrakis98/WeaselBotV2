@@ -1,0 +1,40 @@
+bot:
+  name: "Weasel Bot V2"
+  command_prefix: null
+  slash_commands_first: true
+  test_guild_id_env: "DISCORD_TEST_GUILD_ID"
+
+paths:
+  data_dir: "/app/data"
+  music_library: "/music"
+  logs_dir: "/app/logs"
+
+database:
+  path: "/app/data/weasel-bot-v2.sqlite"
+
+features:
+  music: true
+  local_library: true
+  playlists: true
+  history: true
+  legacy_json_import: true
+  rich_discord_ui: true
+  ai: false
+
+personality:
+  enabled: true
+  playful_responses: true
+  snark_level: "low"
+
+chaos_mode:
+  enabled: false
+  require_admin: true
+  cooldown_seconds: 300
+  allow_queue_shuffle: false
+  allow_surprise_tracks: false
+
+lavalink:
+  host_env: "LAVALINK_HOST"
+  port_env: "LAVALINK_PORT"
+  password_env: "LAVALINK_PASSWORD"
+  secure: false

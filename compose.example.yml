@@ -1,0 +1,33 @@
+services:
+  bot:
+    build:
+      context: .
+    env_file:
+      - .env
+    depends_on:
+      - lavalink
+    networks:
+      - weasel-internal
+      - weasel-egress
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./music:/music:ro
+    restart: unless-stopped
+
+  lavalink:
+    image: ghcr.io/lavalink-devs/lavalink:4
+    environment:
+      SERVER_PORT: "2333"
+      LAVALINK_SERVER_PASSWORD: "${LAVALINK_PASSWORD}"
+    networks:
+      - weasel-internal
+    volumes:
+      - ./lavalink/application.local.yml:/opt/Lavalink/application.yml:ro
+      - ./music:/music:ro
+    restart: unless-stopped
+
+networks:
+  weasel-internal:
+    internal: true
+  weasel-egress:
