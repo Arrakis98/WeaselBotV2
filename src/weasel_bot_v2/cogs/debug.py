@@ -15,7 +15,7 @@ class DebugCog(commands.Cog):
         name="bot_status",
         description="Show safe bot, database, Lavalink, and feature flag status.",
     )
-    async def bot_status(self, interaction: discord.Interaction) -> None:
+    async def show_bot_status(self, interaction: discord.Interaction) -> None:
         database_status = "ready" if self.bot.database.bootstrapped else "configured"
         message = "\n".join(
             (
