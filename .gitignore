@@ -19,3 +19,6 @@ data/
 *.sqlite
 cookies.txt
 application.local.yml
+
+# Local Lavalink runtime config
+lavalink/application.yml
