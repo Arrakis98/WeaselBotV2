@@ -9,7 +9,7 @@ description = "A free, self-hosted Discord music bot foundation."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "discord.py>=2.4,<3",
+    "discord.py[voice]>=2.4,<3",
     "mafic>=2.10,<3",
     "python-dotenv>=1.0,<2",
     "PyYAML>=6.0,<7",

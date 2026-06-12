@@ -16,13 +16,15 @@ class AudioStatusCog(commands.Cog):
         description="Show whether the Lavalink audio backend appears available.",
     )
     async def audio_status(self, interaction: discord.Interaction) -> None:
-        state = "available" if self.bot.lavalink_available else "unavailable"
+        message = f"Lavalink/Mafic: {self.bot.lavalink_status}"
+        if self.bot.lavalink_last_error:
+            message = f"{message} (last error: {self.bot.lavalink_last_error})"
+
         await interaction.response.send_message(
-            f"Lavalink/Mafic: {state} ({self.bot.lavalink_status})",
+            message,
             ephemeral=True,
         )
 
 
 async def setup(bot: WeaselBot) -> None:
     await bot.add_cog(AudioStatusCog(bot))
-
