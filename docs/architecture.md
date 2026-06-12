@@ -116,6 +116,13 @@ setting a different rating replaces the previous one. Ratings are
 persisted in SQLite for future personalization, but recommendation logic is not
 implemented yet.
 
+Phase 5.1 stores a per-guild default volume in `guild_settings`. Volume is
+clamped from 0 to 200, defaults to 100 when unset, is applied when local playback
+starts, and is saved whenever `/volume` or the Now Playing volume buttons change
+it. This preference is independent from the in-memory queue and from user
+ratings. Loop stability, long pause behavior, and occasional panel sync issues
+remain intentionally deferred.
+
 ### Playlist Service
 
 Manages saved playlists, playlist import, playlist editing, and compatibility with old JSON playlist data.

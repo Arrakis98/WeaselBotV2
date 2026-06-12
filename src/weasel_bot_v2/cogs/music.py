@@ -9,8 +9,14 @@ from discord.ext import commands
 
 from weasel_bot_v2.bot import WeaselBot
 from weasel_bot_v2.models import RatingCounts
-from weasel_bot_v2.repositories import RatingRepository, TrackRepository, UserRepository
+from weasel_bot_v2.repositories import (
+    GuildSettingsRepository,
+    RatingRepository,
+    TrackRepository,
+    UserRepository,
+)
 from weasel_bot_v2.services.audio import AudioPlaybackService, PlaybackResult
+from weasel_bot_v2.services.guild_settings import GuildSettingsService
 from weasel_bot_v2.services.local_library import LocalLibraryService
 from weasel_bot_v2.services.player_state import VOLUME_STEP, GuildPlayerState
 from weasel_bot_v2.services.ratings import RatingService
@@ -168,6 +174,35 @@ class MusicCog(commands.Cog):
     @app_commands.command(name="leave", description="Stop playback and leave voice.")
     async def leave_voice(self, interaction: discord.Interaction) -> None:
         await self._run_player_action(interaction, lambda service, guild: service.leave(guild))
+
+    @app_commands.command(name="volume", description="Show or set this server's volume.")
+    async def volume(
+        self,
+        interaction: discord.Interaction,
+        percent: int | None = None,
+    ) -> None:
+        guild = interaction.guild
+        if guild is None:
+            await interaction.response.send_message(
+                "This command can only be used in a server.",
+                ephemeral=True,
+            )
+            return
+
+        if percent is None:
+            state = self.bot.player_states.get(guild.id)
+            volume = (
+                state.volume
+                if state is not None
+                else GuildSettingsService(GuildSettingsRepository(self.bot.database)).get_volume(
+                    guild.id
+                )
+            )
+            await interaction.response.send_message(f"Volume: {volume}%", ephemeral=True)
+            return
+
+        result = await self._playback_service().set_volume(guild, percent)
+        await interaction.response.send_message(result.message, ephemeral=True)
 
     @app_commands.command(
         name="now_playing",
@@ -623,7 +658,7 @@ class NowPlayingView(discord.ui.View):
 
         playback = AudioPlaybackService(self.bot, self.bot.settings.bot.music_library)
         result = await playback.change_volume(guild, delta)
-        await self._finish_control(interaction, result)
+        await interaction.response.send_message(result.message, ephemeral=True)
 
     async def _rate(self, interaction: discord.Interaction, rating_value: str) -> None:
         guild = interaction.guild

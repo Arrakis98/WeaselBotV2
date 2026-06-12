@@ -89,6 +89,12 @@ Expected commands after Discord sync completes:
 - `/back`
 - `/clear_queue`
 - `/remove_from_queue`
+- `/like`
+- `/superlike`
+- `/dislike`
+- `/superdislike`
+- `/my_rating`
+- `/volume`
 
 `/audio_status` only reports whether the Phase 1 Mafic/Lavalink connection appears
 available. It does not play music.
@@ -108,9 +114,11 @@ The example config sets `lavalink.timeout_seconds` to `30` so Mafic's REST calls
 have enough time for Lavalink to resolve local files on slower disks.
 
 Phase 4 adds local queue navigation on top of the Phase 3.5 controls. Queue state
-is in memory per guild and is lost when the bot restarts. Like/superlike,
-dislike/superdislike, same-artist actions, persisted playlists, web playback, and
-autoplay radio are planned for later phases.
+is in memory per guild and is lost when the bot restarts. Phase 5 stores local
+track ratings and a per-guild volume preference in SQLite. Same-artist actions,
+persisted playlists, web playback, and autoplay radio are planned for later
+phases. Loop stability, long pause behavior, and occasional panel sync issues
+remain intentionally deferred.
 
 `/play_all` uses the SQLite index created by `/library_scan`; it does not scan the
 filesystem at command time. It currently queues indexed `.mp3` files only and

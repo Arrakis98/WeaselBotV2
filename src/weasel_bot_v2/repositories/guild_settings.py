@@ -14,7 +14,7 @@ class GuildSettingsRepository:
         with self.database.connect() as connection:
             row = connection.execute(
                 """
-                SELECT guild_id, command_prefix, locale, dj_role_id
+                SELECT guild_id, command_prefix, locale, dj_role_id, default_volume
                 FROM guild_settings
                 WHERE guild_id = ?
                 """,
@@ -44,12 +44,19 @@ class GuildSettingsRepository:
         with self.database.connect() as connection:
             connection.execute(
                 """
-                INSERT INTO guild_settings (guild_id, command_prefix, locale, dj_role_id)
-                VALUES (?, ?, ?, ?)
+                INSERT INTO guild_settings (
+                    guild_id,
+                    command_prefix,
+                    locale,
+                    dj_role_id,
+                    default_volume
+                )
+                VALUES (?, ?, ?, ?, ?)
                 ON CONFLICT(guild_id) DO UPDATE SET
                     command_prefix = excluded.command_prefix,
                     locale = excluded.locale,
                     dj_role_id = excluded.dj_role_id,
+                    default_volume = excluded.default_volume,
                     updated_at = CURRENT_TIMESTAMP
                 """,
                 (
@@ -57,6 +64,7 @@ class GuildSettingsRepository:
                     settings.command_prefix,
                     settings.locale,
                     settings.dj_role_id,
+                    settings.default_volume,
                 ),
             )
             connection.commit()
@@ -70,4 +78,5 @@ def _guild_settings_from_row(row: Row) -> GuildSettings:
         command_prefix=row["command_prefix"],
         locale=row["locale"],
         dj_role_id=row["dj_role_id"],
+        default_volume=int(row["default_volume"]),
     )

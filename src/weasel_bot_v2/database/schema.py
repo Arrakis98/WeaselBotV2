@@ -7,6 +7,7 @@ SCHEMA_STATEMENTS = (
         command_prefix TEXT,
         locale TEXT,
         dj_role_id INTEGER,
+        default_volume INTEGER NOT NULL DEFAULT 100,
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     )
@@ -107,4 +108,5 @@ SCHEMA_MIGRATIONS = (
     "CREATE INDEX IF NOT EXISTS idx_tracks_local_search ON tracks("
     "source, display_title, artist_guess, category_guess, file_name, relative_path"
     ")",
+    "ALTER TABLE guild_settings ADD COLUMN default_volume INTEGER NOT NULL DEFAULT 100",
 )

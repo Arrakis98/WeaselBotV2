@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
@@ -12,6 +13,14 @@ from weasel_bot_v2.repositories import (
     PlaylistRepository,
     TrackRepository,
     UserRepository,
+)
+from weasel_bot_v2.services.audio import AudioPlaybackService
+from weasel_bot_v2.services.guild_settings import GuildSettingsService
+from weasel_bot_v2.services.player_state import (
+    DEFAULT_VOLUME,
+    MAX_VOLUME,
+    MIN_VOLUME,
+    PlayerStateStore,
 )
 
 
@@ -36,7 +45,13 @@ def test_guild_settings_save_updates_values(database: SQLiteDatabase) -> None:
     repository = GuildSettingsRepository(database)
 
     saved = repository.save(
-        GuildSettings(guild_id=123, command_prefix="!", locale="en-US", dj_role_id=456)
+        GuildSettings(
+            guild_id=123,
+            command_prefix="!",
+            locale="en-US",
+            dj_role_id=456,
+            default_volume=75,
+        )
     )
 
     assert saved == GuildSettings(
@@ -44,7 +59,50 @@ def test_guild_settings_save_updates_values(database: SQLiteDatabase) -> None:
         command_prefix="!",
         locale="en-US",
         dj_role_id=456,
+        default_volume=75,
     )
+
+
+def test_guild_settings_volume_defaults_to_100_when_unset(
+    database: SQLiteDatabase,
+) -> None:
+    service = GuildSettingsService(GuildSettingsRepository(database))
+
+    assert service.get_volume(123) == DEFAULT_VOLUME
+
+
+def test_guild_settings_volume_is_saved_and_retrieved(database: SQLiteDatabase) -> None:
+    service = GuildSettingsService(GuildSettingsRepository(database))
+
+    assert service.set_volume(123, 80) == 80
+    assert service.get_volume(123) == 80
+
+
+def test_guild_settings_volume_clamps_low(database: SQLiteDatabase) -> None:
+    service = GuildSettingsService(GuildSettingsRepository(database))
+
+    assert service.set_volume(123, -50) == MIN_VOLUME
+    assert service.get_volume(123) == MIN_VOLUME
+
+
+def test_guild_settings_volume_clamps_high(database: SQLiteDatabase) -> None:
+    service = GuildSettingsService(GuildSettingsRepository(database))
+
+    assert service.set_volume(123, 999) == MAX_VOLUME
+    assert service.get_volume(123) == MAX_VOLUME
+
+
+@pytest.mark.asyncio
+async def test_audio_set_volume_saves_and_syncs_state(database: SQLiteDatabase) -> None:
+    bot = _FakeBot(database)
+    guild = _FakeGuild(guild_id=123)
+    service = AudioPlaybackService(bot, Path("/music"))
+
+    result = await service.set_volume(cast(Any, guild), 65)
+
+    assert result.ok is True
+    assert GuildSettingsService(GuildSettingsRepository(database)).get_volume(123) == 65
+    assert bot.player_states.get_or_create(123).volume == 65
 
 
 def test_user_create_and_fetch(database: SQLiteDatabase) -> None:
@@ -88,3 +146,15 @@ def test_basic_playlist_repository_behavior(database: SQLiteDatabase) -> None:
             added_by_user_id=42,
         )
     ]
+
+
+class _FakeBot:
+    def __init__(self, database: SQLiteDatabase) -> None:
+        self.database = database
+        self.player_states = PlayerStateStore()
+
+
+class _FakeGuild:
+    def __init__(self, guild_id: int) -> None:
+        self.id = guild_id
+        self.voice_client: Any = None

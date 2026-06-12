@@ -8,9 +8,14 @@ from typing import Any, cast
 import aiohttp
 import discord
 
-from weasel_bot_v2.models import Track
+from weasel_bot_v2.models import GuildSettings, Track
+from weasel_bot_v2.repositories import GuildSettingsRepository
 from weasel_bot_v2.services.local_library import safe_relative_path
-from weasel_bot_v2.services.player_state import GuildPlayerState
+from weasel_bot_v2.services.player_state import (
+    DEFAULT_VOLUME,
+    GuildPlayerState,
+    clamp_volume,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -123,8 +128,9 @@ class AudioPlaybackService:
                 relative.as_posix(),
             )
             LOGGER.info("Starting player.play for local relative_path=%s.", relative.as_posix())
-            await cast(Any, player).play(lavalink_track)
             state = self.bot.player_states.get_or_create(guild.id)
+            state.set_volume(self._load_saved_volume(guild.id))
+            await cast(Any, player).play(lavalink_track)
             await self._apply_volume(player, state.volume)
             state.set_current_track(track)
             LOGGER.info("player.play succeeded for local relative_path=%s.", relative.as_posix())
@@ -321,15 +327,16 @@ class AudioPlaybackService:
         await self.play_track_on_player(guild=guild, player=player, track=track)
 
     async def change_volume(self, guild: discord.Guild, delta: int) -> PlaybackResult:
-        state = self._active_state(guild)
-        if state is None:
-            return PlaybackResult(ok=False, message="Nothing is playing.")
-
-        player = self._active_player(guild)
-        if player is None or not hasattr(player, "set_volume"):
-            return PlaybackResult(ok=False, message="The bot is not connected to a player.")
+        state = self.bot.player_states.get_or_create(guild.id)
+        if not state.has_track:
+            state.set_volume(self._load_saved_volume(guild.id))
 
         volume = state.change_volume(delta)
+        self._save_guild_volume(guild.id, volume)
+        player = self._active_player(guild)
+        if player is None or not hasattr(player, "set_volume"):
+            return PlaybackResult(ok=True, message=f"Volume saved: {volume}%")
+
         try:
             await self._apply_volume(player, volume)
         except Exception as exc:  # noqa: BLE001 - controls should report clean failures.
@@ -338,7 +345,24 @@ class AudioPlaybackService:
                 message=f"Could not change volume: {exc.__class__.__name__}.",
             )
 
-        return PlaybackResult(ok=True, message=f"Volume: {volume}%")
+        return PlaybackResult(ok=True, message=f"Volume saved: {volume}%")
+
+    async def set_volume(self, guild: discord.Guild, volume: int) -> PlaybackResult:
+        state = self.bot.player_states.get_or_create(guild.id)
+        saved_volume = self._save_guild_volume(guild.id, volume)
+        state.set_volume(saved_volume)
+
+        player = self._active_player(guild)
+        if player is not None and hasattr(player, "set_volume"):
+            try:
+                await self._apply_volume(player, saved_volume)
+            except Exception as exc:  # noqa: BLE001 - controls should report clean failures.
+                return PlaybackResult(
+                    ok=False,
+                    message=f"Volume saved but could not apply now: {exc.__class__.__name__}.",
+                )
+
+        return PlaybackResult(ok=True, message=f"Volume saved: {saved_volume}%")
 
     def toggle_loop(self, guild_id: int) -> PlaybackResult:
         state = self.bot.player_states.get(guild_id)
@@ -389,6 +413,26 @@ class AudioPlaybackService:
     async def _apply_volume(self, player: object, volume: int) -> None:
         if hasattr(player, "set_volume"):
             await cast(Any, player).set_volume(volume)
+
+    def _load_saved_volume(self, guild_id: int) -> int:
+        settings = GuildSettingsRepository(self.bot.database).ensure(guild_id)
+        volume = settings.default_volume
+        return clamp_volume(DEFAULT_VOLUME if volume is None else volume)
+
+    def _save_guild_volume(self, guild_id: int, volume: int) -> int:
+        repository = GuildSettingsRepository(self.bot.database)
+        settings = repository.ensure(guild_id)
+        clamped = clamp_volume(volume)
+        repository.save(
+            GuildSettings(
+                guild_id=settings.guild_id,
+                command_prefix=settings.command_prefix,
+                locale=settings.locale,
+                dj_role_id=settings.dj_role_id,
+                default_volume=clamped,
+            )
+        )
+        return clamped
 
 
 def build_lavalink_local_identifier(*, music_root: Path, relative_path: str) -> str:

@@ -23,7 +23,8 @@ Phase 5.0 provides the Docker/Lavalink stack, core SQLite architecture, local
 library indexing, local search, local `/play_local` playback, `/play_all` for
 shuffled indexed MP3 queues, basic player controls, a Discord Now Playing
 control panel, an in-memory per-guild local playback queue, and persisted user
-ratings for local tracks.
+ratings for local tracks. Phase 5.1 adds a persistent per-guild volume
+preference so server volume survives bot restarts.
 
 ## Selected Stack
 
@@ -103,10 +104,13 @@ Expected Discord slash commands after the bot logs in:
 - `/dislike`
 - `/superdislike`
 - `/my_rating`
+- `/volume`
 
 The Now Playing panel also exposes active Like, SuperLike, Dislike, and
 SuperDislike buttons. Ratings are stored for later personalization work, but they
-do not drive recommendations yet.
+do not drive recommendations yet. Queue state and ratings remain separate from
+the guild volume preference. Loop, long pause, and occasional panel sync
+limitations are still intentionally deferred.
 
 Lavalink is only reachable on the internal Docker network by default. The example
 compose file mounts `./music` as read-only example storage and does not expose

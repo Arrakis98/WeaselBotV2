@@ -9,6 +9,7 @@ class GuildSettings:
     command_prefix: str | None = None
     locale: str | None = None
     dj_role_id: int | None = None
+    default_volume: int = 100
 
 
 @dataclass(frozen=True)
