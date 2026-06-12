@@ -101,13 +101,20 @@ starts playback when idle and enqueues while active. Skip/back controls and
 natural track-end auto-advance operate on this in-memory queue.
 
 The Phase 4 queue is not persisted to SQLite yet. Ratings, recommendations, web
-playback, autoplay radio, playlist workflows, like/superlike,
-dislike/superdislike, and same-artist actions remain planned for later phases.
+playback, autoplay radio, playlist workflows, and same-artist actions remain
+planned for later phases.
 
 `/play_all` feeds the in-memory queue from already indexed local library rows. It
 filters to tracks whose indexed extension is `.mp3`, shuffles them, starts the
 first track when idle, and appends the remaining tracks to the upcoming queue.
 Non-MP3 indexed files are intentionally ignored by `/play_all` for now.
+
+Phase 5.0 stores one active user rating per local track and guild. Users can set
+Like, SuperLike, Dislike, or SuperDislike from slash commands or the Now Playing
+panel; setting the same rating again confirms it and refreshes the row, while
+setting a different rating replaces the previous one. Ratings are
+persisted in SQLite for future personalization, but recommendation logic is not
+implemented yet.
 
 ### Playlist Service
 

@@ -6,6 +6,7 @@ from weasel_bot_v2.models.records import (
     Playlist,
     PlaylistItem,
     Rating,
+    RatingCounts,
     Track,
     UserRecord,
 )
@@ -16,6 +17,7 @@ __all__ = [
     "PlaylistItem",
     "PlayHistoryEntry",
     "Rating",
+    "RatingCounts",
     "Track",
     "UserRecord",
 ]

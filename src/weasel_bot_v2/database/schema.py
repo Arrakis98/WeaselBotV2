@@ -57,7 +57,7 @@ SCHEMA_STATEMENTS = (
         guild_id INTEGER NOT NULL,
         user_id INTEGER NOT NULL,
         track_id INTEGER NOT NULL,
-        rating INTEGER NOT NULL,
+        rating TEXT NOT NULL,
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (guild_id, user_id, track_id),

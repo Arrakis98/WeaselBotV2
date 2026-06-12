@@ -8,10 +8,12 @@ from discord import app_commands
 from discord.ext import commands
 
 from weasel_bot_v2.bot import WeaselBot
-from weasel_bot_v2.repositories import TrackRepository
+from weasel_bot_v2.models import RatingCounts
+from weasel_bot_v2.repositories import RatingRepository, TrackRepository, UserRepository
 from weasel_bot_v2.services.audio import AudioPlaybackService, PlaybackResult
 from weasel_bot_v2.services.local_library import LocalLibraryService
 from weasel_bot_v2.services.player_state import VOLUME_STEP, GuildPlayerState
+from weasel_bot_v2.services.ratings import RatingService
 
 
 class MusicCog(commands.Cog):
@@ -186,7 +188,7 @@ class MusicCog(commands.Cog):
             return
 
         await interaction.response.send_message(
-            embed=build_now_playing_embed(state),
+            embed=build_now_playing_embed(state, self._rating_counts(state)),
             view=NowPlayingView(self.bot, state),
         )
 
@@ -240,6 +242,48 @@ class MusicCog(commands.Cog):
         result = self._playback_service().remove_from_queue(guild.id, position)
         await interaction.response.send_message(result.message, ephemeral=True)
 
+    @app_commands.command(name="like", description="Like the current local track.")
+    async def like_current_track(self, interaction: discord.Interaction) -> None:
+        await self._rate_current_track(interaction, "like")
+
+    @app_commands.command(
+        name="superlike",
+        description="SuperLike the current local track.",
+    )
+    async def superlike_current_track(self, interaction: discord.Interaction) -> None:
+        await self._rate_current_track(interaction, "superlike")
+
+    @app_commands.command(name="dislike", description="Dislike the current local track.")
+    async def dislike_current_track(self, interaction: discord.Interaction) -> None:
+        await self._rate_current_track(interaction, "dislike")
+
+    @app_commands.command(
+        name="superdislike",
+        description="SuperDislike the current local track.",
+    )
+    async def superdislike_current_track(self, interaction: discord.Interaction) -> None:
+        await self._rate_current_track(interaction, "superdislike")
+
+    @app_commands.command(
+        name="my_rating",
+        description="Show your rating for the current local track.",
+    )
+    async def my_rating(self, interaction: discord.Interaction) -> None:
+        guild = interaction.guild
+        if guild is None:
+            await interaction.response.send_message(
+                "This command can only be used in a server.",
+                ephemeral=True,
+            )
+            return
+
+        state = self.bot.player_states.get(guild.id)
+        result = self._rating_service().get_current_rating(
+            state=state,
+            user_id=interaction.user.id,
+        )
+        await interaction.response.send_message(result.message, ephemeral=True)
+
     def _library_service(self) -> LocalLibraryService:
         return LocalLibraryService(
             music_root=self.bot.settings.bot.music_library,
@@ -248,6 +292,37 @@ class MusicCog(commands.Cog):
 
     def _playback_service(self) -> AudioPlaybackService:
         return AudioPlaybackService(self.bot, self.bot.settings.bot.music_library)
+
+    def _rating_service(self) -> RatingService:
+        return RatingService(
+            ratings=RatingRepository(self.bot.database),
+            users=UserRepository(self.bot.database),
+        )
+
+    def _rating_counts(self, state: GuildPlayerState | None) -> RatingCounts:
+        return self._rating_service().counts_for_current_track(state)
+
+    async def _rate_current_track(
+        self,
+        interaction: discord.Interaction,
+        rating_value: str,
+    ) -> None:
+        guild = interaction.guild
+        if guild is None:
+            await interaction.response.send_message(
+                "This command can only be used in a server.",
+                ephemeral=True,
+            )
+            return
+
+        state = self.bot.player_states.get(guild.id)
+        result = self._rating_service().rate_current_track(
+            state=state,
+            user_id=interaction.user.id,
+            display_name=interaction.user.display_name,
+            rating_value=rating_value,
+        )
+        await interaction.response.send_message(result.message, ephemeral=True)
 
     async def _run_player_action(
         self,
@@ -279,12 +354,15 @@ class MusicCog(commands.Cog):
             return
 
         await channel.send(
-            embed=build_now_playing_embed(state),
+            embed=build_now_playing_embed(state, self._rating_counts(state)),
             view=NowPlayingView(self.bot, state),
         )
 
 
-def build_now_playing_embed(state: GuildPlayerState) -> discord.Embed:
+def build_now_playing_embed(
+    state: GuildPlayerState,
+    rating_counts: RatingCounts | None = None,
+) -> discord.Embed:
     track = state.current_track
     title = "Unknown local track"
     if track is not None:
@@ -314,6 +392,17 @@ def build_now_playing_embed(state: GuildPlayerState) -> discord.Embed:
         value="Available" if state.can_go_back else "None",
         inline=True,
     )
+    if rating_counts is not None:
+        embed.add_field(
+            name="Ratings",
+            value=(
+                f"❤️ {rating_counts.like}  "
+                f"💎 {rating_counts.superlike}  "
+                f"👎 {rating_counts.dislike}  "
+                f"💀 {rating_counts.superdislike}"
+            ),
+            inline=False,
+        )
     if track is not None and track.relative_path:
         embed.set_footer(text=track.relative_path)
     return embed
@@ -355,7 +444,12 @@ class NowPlayingView(discord.ui.View):
         self.bot = bot
         self._update_button_state(state)
 
-    @discord.ui.button(label="Pause / Resume", emoji="⏯️", style=discord.ButtonStyle.primary)
+    @discord.ui.button(
+        label="Pause / Resume",
+        emoji="⏯️",
+        style=discord.ButtonStyle.primary,
+        row=0,
+    )
     async def pause_resume(
         self,
         interaction: discord.Interaction,
@@ -378,7 +472,7 @@ class NowPlayingView(discord.ui.View):
         result = await (playback.resume(guild) if state.paused else playback.pause(guild))
         await self._finish_control(interaction, result)
 
-    @discord.ui.button(label="Back", emoji="⏮️", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(label="Back", emoji="⏮️", style=discord.ButtonStyle.secondary, row=0)
     async def back_button(
         self,
         interaction: discord.Interaction,
@@ -396,7 +490,7 @@ class NowPlayingView(discord.ui.View):
         result = await playback.back(guild)
         await self._finish_control(interaction, result)
 
-    @discord.ui.button(label="Skip", emoji="⏭️", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(label="Skip", emoji="⏭️", style=discord.ButtonStyle.secondary, row=0)
     async def skip_button(
         self,
         interaction: discord.Interaction,
@@ -414,7 +508,7 @@ class NowPlayingView(discord.ui.View):
         result = await playback.skip(guild)
         await self._finish_control(interaction, result)
 
-    @discord.ui.button(label="Stop", emoji="⏹️", style=discord.ButtonStyle.danger)
+    @discord.ui.button(label="Stop", emoji="⏹️", style=discord.ButtonStyle.danger, row=0)
     async def stop_button(
         self,
         interaction: discord.Interaction,
@@ -432,7 +526,12 @@ class NowPlayingView(discord.ui.View):
         result = await playback.stop(guild)
         await self._finish_control(interaction, result)
 
-    @discord.ui.button(label="Volume Down", emoji="🔉", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(
+        label="Volume Down",
+        emoji="🔉",
+        style=discord.ButtonStyle.secondary,
+        row=1,
+    )
     async def volume_down(
         self,
         interaction: discord.Interaction,
@@ -440,7 +539,12 @@ class NowPlayingView(discord.ui.View):
     ) -> None:
         await self._volume(interaction, -VOLUME_STEP)
 
-    @discord.ui.button(label="Volume Up", emoji="🔊", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(
+        label="Volume Up",
+        emoji="🔊",
+        style=discord.ButtonStyle.secondary,
+        row=1,
+    )
     async def volume_up(
         self,
         interaction: discord.Interaction,
@@ -448,7 +552,7 @@ class NowPlayingView(discord.ui.View):
     ) -> None:
         await self._volume(interaction, VOLUME_STEP)
 
-    @discord.ui.button(label="Loop", emoji="🔁", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(label="Loop", emoji="🔁", style=discord.ButtonStyle.secondary, row=1)
     async def loop_current(
         self,
         interaction: discord.Interaction,
@@ -466,6 +570,48 @@ class NowPlayingView(discord.ui.View):
         result = playback.toggle_loop(guild.id)
         await self._finish_control(interaction, result)
 
+    @discord.ui.button(label="Like", emoji="❤️", style=discord.ButtonStyle.secondary, row=2)
+    async def like_button(
+        self,
+        interaction: discord.Interaction,
+        button: discord.ui.Button[NowPlayingView],
+    ) -> None:
+        await self._rate(interaction, "like")
+
+    @discord.ui.button(
+        label="SuperLike",
+        emoji="💎",
+        style=discord.ButtonStyle.secondary,
+        row=2,
+    )
+    async def superlike_button(
+        self,
+        interaction: discord.Interaction,
+        button: discord.ui.Button[NowPlayingView],
+    ) -> None:
+        await self._rate(interaction, "superlike")
+
+    @discord.ui.button(label="Dislike", emoji="👎", style=discord.ButtonStyle.secondary, row=2)
+    async def dislike_button(
+        self,
+        interaction: discord.Interaction,
+        button: discord.ui.Button[NowPlayingView],
+    ) -> None:
+        await self._rate(interaction, "dislike")
+
+    @discord.ui.button(
+        label="SuperDislike",
+        emoji="💀",
+        style=discord.ButtonStyle.secondary,
+        row=2,
+    )
+    async def superdislike_button(
+        self,
+        interaction: discord.Interaction,
+        button: discord.ui.Button[NowPlayingView],
+    ) -> None:
+        await self._rate(interaction, "superdislike")
+
     async def _volume(self, interaction: discord.Interaction, delta: int) -> None:
         guild = interaction.guild
         if guild is None:
@@ -479,6 +625,27 @@ class NowPlayingView(discord.ui.View):
         result = await playback.change_volume(guild, delta)
         await self._finish_control(interaction, result)
 
+    async def _rate(self, interaction: discord.Interaction, rating_value: str) -> None:
+        guild = interaction.guild
+        if guild is None:
+            await interaction.response.send_message(
+                "This control can only be used in a server.",
+                ephemeral=True,
+            )
+            return
+
+        state = self.bot.player_states.get(guild.id)
+        result = RatingService(
+            ratings=RatingRepository(self.bot.database),
+            users=UserRepository(self.bot.database),
+        ).rate_current_track(
+            state=state,
+            user_id=interaction.user.id,
+            display_name=interaction.user.display_name,
+            rating_value=rating_value,
+        )
+        await interaction.response.send_message(result.message, ephemeral=True)
+
     async def _finish_control(
         self,
         interaction: discord.Interaction,
@@ -488,8 +655,12 @@ class NowPlayingView(discord.ui.View):
         state = self.bot.player_states.get(guild.id) if guild is not None else None
         if result.ok and state is not None and state.has_track:
             self._update_button_state(state)
+            rating_counts = RatingService(
+                ratings=RatingRepository(self.bot.database),
+                users=UserRepository(self.bot.database),
+            ).counts_for_current_track(state)
             await interaction.response.edit_message(
-                embed=build_now_playing_embed(state),
+                embed=build_now_playing_embed(state, rating_counts),
                 view=self,
             )
             return

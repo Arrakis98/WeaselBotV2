@@ -50,7 +50,15 @@ class Rating:
     guild_id: int
     user_id: int
     track_id: int
-    rating: int
+    rating: str
+
+
+@dataclass(frozen=True)
+class RatingCounts:
+    like: int = 0
+    superlike: int = 0
+    dislike: int = 0
+    superdislike: int = 0
 
 
 @dataclass(frozen=True)
