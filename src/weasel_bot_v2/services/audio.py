@@ -10,6 +10,7 @@ import discord
 
 from weasel_bot_v2.models import Track
 from weasel_bot_v2.services.local_library import safe_relative_path
+from weasel_bot_v2.services.player_state import GuildPlayerState
 
 LOGGER = logging.getLogger(__name__)
 
@@ -106,6 +107,9 @@ class AudioPlaybackService:
             )
             LOGGER.info("Starting player.play for local relative_path=%s.", relative.as_posix())
             await player.play(lavalink_track)
+            state = self.bot.player_states.get_or_create(guild.id)
+            await self._apply_volume(player, state.volume)
+            state.set_current_track(track)
             LOGGER.info("player.play succeeded for local relative_path=%s.", relative.as_posix())
         except Exception as exc:  # noqa: BLE001 - Discord command should report a clean runtime error.
             LOGGER.warning(
@@ -126,6 +130,114 @@ class AudioPlaybackService:
 
         title = track.display_title or track.file_name or track.relative_path
         return PlaybackResult(ok=True, message=f"Playing local track: {title}")
+
+    async def pause(self, guild: discord.Guild) -> PlaybackResult:
+        state = self._active_state(guild)
+        if state is None:
+            return PlaybackResult(ok=False, message="Nothing is playing.")
+
+        player = self._active_player(guild)
+        if player is None or not hasattr(player, "pause"):
+            return PlaybackResult(ok=False, message="The bot is not connected to a player.")
+
+        try:
+            await cast(Any, player).pause(True)
+        except Exception as exc:  # noqa: BLE001 - controls should report clean failures.
+            return PlaybackResult(
+                ok=False,
+                message=f"Could not pause playback: {exc.__class__.__name__}.",
+            )
+
+        state.paused = True
+        return PlaybackResult(ok=True, message="Paused.")
+
+    async def resume(self, guild: discord.Guild) -> PlaybackResult:
+        state = self._active_state(guild)
+        if state is None:
+            return PlaybackResult(ok=False, message="Nothing is playing.")
+
+        player = self._active_player(guild)
+        if player is None or not hasattr(player, "resume"):
+            return PlaybackResult(ok=False, message="The bot is not connected to a player.")
+
+        try:
+            await cast(Any, player).resume()
+        except Exception as exc:  # noqa: BLE001 - controls should report clean failures.
+            return PlaybackResult(
+                ok=False,
+                message=f"Could not resume playback: {exc.__class__.__name__}.",
+            )
+
+        state.paused = False
+        return PlaybackResult(ok=True, message="Resumed.")
+
+    async def stop(self, guild: discord.Guild) -> PlaybackResult:
+        state = self._active_state(guild)
+        if state is None:
+            return PlaybackResult(ok=False, message="Nothing is playing.")
+
+        player = self._active_player(guild)
+        if player is None or not hasattr(player, "stop"):
+            return PlaybackResult(ok=False, message="The bot is not connected to a player.")
+
+        try:
+            await cast(Any, player).stop()
+        except Exception as exc:  # noqa: BLE001 - controls should report clean failures.
+            return PlaybackResult(
+                ok=False,
+                message=f"Could not stop playback: {exc.__class__.__name__}.",
+            )
+
+        self.bot.player_states.clear(guild.id)
+        return PlaybackResult(ok=True, message="Stopped.")
+
+    async def leave(self, guild: discord.Guild) -> PlaybackResult:
+        player = self._active_player(guild)
+        if player is None or not hasattr(player, "disconnect"):
+            self.bot.player_states.clear(guild.id)
+            return PlaybackResult(ok=False, message="The bot is not connected to voice.")
+
+        try:
+            if hasattr(player, "stop"):
+                await cast(Any, player).stop()
+            await cast(Any, player).disconnect()
+        except Exception as exc:  # noqa: BLE001 - controls should report clean failures.
+            return PlaybackResult(
+                ok=False,
+                message=f"Could not leave voice: {exc.__class__.__name__}.",
+            )
+
+        self.bot.player_states.clear(guild.id)
+        return PlaybackResult(ok=True, message="Left voice.")
+
+    async def change_volume(self, guild: discord.Guild, delta: int) -> PlaybackResult:
+        state = self._active_state(guild)
+        if state is None:
+            return PlaybackResult(ok=False, message="Nothing is playing.")
+
+        player = self._active_player(guild)
+        if player is None or not hasattr(player, "set_volume"):
+            return PlaybackResult(ok=False, message="The bot is not connected to a player.")
+
+        volume = state.change_volume(delta)
+        try:
+            await self._apply_volume(player, volume)
+        except Exception as exc:  # noqa: BLE001 - controls should report clean failures.
+            return PlaybackResult(
+                ok=False,
+                message=f"Could not change volume: {exc.__class__.__name__}.",
+            )
+
+        return PlaybackResult(ok=True, message=f"Volume: {volume}%")
+
+    def toggle_loop(self, guild_id: int) -> PlaybackResult:
+        state = self.bot.player_states.get(guild_id)
+        if state is None or not state.has_track:
+            return PlaybackResult(ok=False, message="Nothing is playing.")
+
+        enabled = state.toggle_loop()
+        message = "Loop current track: on." if enabled else "Loop current track: off."
+        return PlaybackResult(ok=True, message=message)
 
     async def _load_local_track(self, *, identifier: str, mafic_module: Any) -> Any:
         lavalink = self.bot.settings.lavalink
@@ -151,6 +263,22 @@ class AudioPlaybackService:
                 payload = await response.json()
 
         return normalize_lavalink_track_load(payload, mafic_module=mafic_module)
+
+    def current_state(self, guild_id: int) -> GuildPlayerState | None:
+        state = self.bot.player_states.get(guild_id)
+        if state is None or not state.has_track:
+            return None
+        return state
+
+    def _active_state(self, guild: discord.Guild) -> GuildPlayerState | None:
+        return self.current_state(guild.id)
+
+    def _active_player(self, guild: discord.Guild) -> object | None:
+        return guild.voice_client
+
+    async def _apply_volume(self, player: object, volume: int) -> None:
+        if hasattr(player, "set_volume"):
+            await cast(Any, player).set_volume(volume)
 
 
 def build_lavalink_local_identifier(*, music_root: Path, relative_path: str) -> str:

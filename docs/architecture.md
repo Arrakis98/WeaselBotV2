@@ -94,6 +94,16 @@ play a single local path visible inside the Lavalink container. If local file
 resolution fails at runtime, the command reports a clear error instead of
 pretending playback succeeded.
 
+Phase 3.5 adds basic player controls and a Discord Now Playing control panel for
+the active local track. The bot tracks minimal per-guild state only: current
+track, paused state, volume, and loop-current preference. It does not introduce a
+queue, ratings, recommendations, web playback, autoplay, or playlist workflows.
+
+Planned controls for later phases include skip/back, like/superlike,
+dislike/superdislike, and same-artist actions. Current-track loop state is
+captured in the control panel, while automatic replay is deferred until the bot
+has a fuller playback event layer.
+
 ### Playlist Service
 
 Manages saved playlists, playlist import, playlist editing, and compatibility with old JSON playlist data.

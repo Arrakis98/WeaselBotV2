@@ -10,6 +10,7 @@ from discord.ext import commands
 from weasel_bot_v2.config import Settings
 from weasel_bot_v2.database import SQLiteDatabase
 from weasel_bot_v2.logging_config import configure_logging
+from weasel_bot_v2.services.player_state import PlayerStateStore
 
 LOGGER = logging.getLogger(__name__)
 
@@ -30,6 +31,7 @@ class WeaselBot(commands.Bot):
         super().__init__(command_prefix=commands.when_mentioned, intents=intents)
         self.settings = settings
         self.database = SQLiteDatabase(settings.database)
+        self.player_states = PlayerStateStore()
         self.lavalink_pool: Any | None = None
         self.lavalink_available = False
         self.lavalink_status = "not configured"
