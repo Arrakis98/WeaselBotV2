@@ -19,7 +19,8 @@ This repository is designed to be public-repository safe. It must not contain Di
 
 ## Current Status
 
-This is the project foundation only. The bot is not implemented yet.
+Phase 1 provides a minimal Docker/Lavalink stack and a small Discord bot skeleton.
+It includes `/ping` and `/audio_status`; music playback is not implemented yet.
 
 ## Selected Stack
 
@@ -54,3 +55,31 @@ Create local private files when needed, but do not commit them:
 - [Architecture Decisions](docs/decisions.md)
 - [Deployment Notes](docs/deployment.md)
 - [Chaos Mode](docs/chaos-mode.md)
+
+## Phase 1 Local Development
+
+Create private local files from the safe examples:
+
+```bash
+cp .env.example .env
+cp config.example.yaml config.yaml
+cp compose.example.yml compose.yml
+```
+
+Edit `.env` locally and set `DISCORD_TOKEN` and `LAVALINK_PASSWORD`. Do not commit
+`.env`, `config.yaml`, or `compose.yml`.
+
+Start the local stack:
+
+```bash
+docker compose up --build
+```
+
+Expected Discord slash commands after the bot logs in:
+
+- `/ping`
+- `/audio_status`
+
+Lavalink is only reachable on the internal Docker network by default. The example
+compose file mounts `./music` as read-only example storage and does not expose
+Lavalink ports publicly.

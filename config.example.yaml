@@ -13,17 +13,17 @@ database:
   path: "/app/data/weasel-bot-v2.sqlite"
 
 features:
-  music: true
-  local_library: true
-  playlists: true
-  history: true
-  legacy_json_import: true
-  rich_discord_ui: true
+  music: false
+  local_library: false
+  playlists: false
+  history: false
+  legacy_json_import: false
+  rich_discord_ui: false
   ai: false
 
 personality:
-  enabled: true
-  playful_responses: true
+  enabled: false
+  playful_responses: false
   snark_level: "low"
 
 chaos_mode:
@@ -34,6 +34,8 @@ chaos_mode:
   allow_surprise_tracks: false
 
 lavalink:
+  host: "lavalink"
+  port: 2333
   host_env: "LAVALINK_HOST"
   port_env: "LAVALINK_PORT"
   password_env: "LAVALINK_PASSWORD"

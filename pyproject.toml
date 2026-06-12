@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "weasel-bot-v2"
+version = "0.1.0"
+description = "A free, self-hosted Discord music bot foundation."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "discord.py>=2.4,<3",
+    "mafic>=2.10,<3",
+    "python-dotenv>=1.0,<2",
+    "PyYAML>=6.0,<7",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0,<9",
+    "pytest-asyncio>=0.23,<1",
+    "ruff>=0.8,<1",
+    "pyright>=1.1,<2",
+]
+
+[project.scripts]
+weasel-bot-v2 = "weasel_bot_v2.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pyright]
+include = ["src", "tests"]
+pythonVersion = "3.12"
+typeCheckingMode = "basic"
+venvPath = "."
+venv = ".venv"
+executionEnvironments = [
+    { root = ".", extraPaths = ["src"] },
+]

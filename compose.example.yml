@@ -2,8 +2,13 @@ services:
   bot:
     build:
       context: .
-    env_file:
-      - .env
+    command: ["python", "-m", "weasel_bot_v2"]
+    environment:
+      DISCORD_TOKEN: "${DISCORD_TOKEN:-}"
+      DISCORD_TEST_GUILD_ID: "${DISCORD_TEST_GUILD_ID:-}"
+      LAVALINK_HOST: lavalink
+      LAVALINK_PORT: "2333"
+      LAVALINK_PASSWORD: "${LAVALINK_PASSWORD:-change-me-locally}"
     depends_on:
       - lavalink
     networks:
@@ -19,11 +24,11 @@ services:
     image: ghcr.io/lavalink-devs/lavalink:4
     environment:
       SERVER_PORT: "2333"
-      LAVALINK_SERVER_PASSWORD: "${LAVALINK_PASSWORD}"
+      LAVALINK_SERVER_PASSWORD: "${LAVALINK_PASSWORD:-change-me-locally}"
     networks:
       - weasel-internal
     volumes:
-      - ./lavalink/application.local.yml:/opt/Lavalink/application.yml:ro
+      - ./lavalink/application.example.yml:/opt/Lavalink/application.yml:ro
       - ./music:/music:ro
     restart: unless-stopped
 
