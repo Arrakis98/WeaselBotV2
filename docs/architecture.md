@@ -1,12 +1,12 @@
 # Architecture
 
-Weasel Bot V2 is intended to run as a small self-hosted Docker stack with a Python Discord bot container and a separate Lavalink container.
+Weasel Bot V2 is intended to run as a small self-hosted Docker stack with a Python 3.12 Discord bot container and a separate Lavalink container.
 
 ## Containers
 
 ### Discord Bot Container
 
-The bot container will run the Python application. It owns Discord interaction handling, bot configuration, persistence access, playlist logic, user settings, personality behavior, and orchestration of audio playback through Lavalink.
+The bot container will run the Python application using `discord.py` for Discord interactions. It owns Discord interaction handling, bot configuration, persistence access, playlist logic, user settings, personality behavior, and orchestration of audio playback through Lavalink.
 
 ### Lavalink Container
 
@@ -41,7 +41,7 @@ Handles slash commands first, with buttons, select menus, embeds, and later moda
 
 ### Audio Service
 
-Owns playback state, Lavalink connection handling, queue operations, and audio errors. The Lavalink Python client has not been selected yet.
+Owns playback state, Lavalink connection handling, queue operations, and audio errors. The preferred initial Lavalink Python client is Mafic, wrapped behind project-owned audio interfaces so the rest of the bot is not coupled directly to client internals. This choice remains reversible until Phase 1 validates an actual Docker/Lavalink connection and minimal playback test.
 
 ### Playlist Service
 

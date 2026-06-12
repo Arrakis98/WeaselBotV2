@@ -37,18 +37,72 @@ SQLite will be the first persistent database. It keeps the bot self-hosted and s
 
 AI and Ollama features may be added later, but they must remain optional. Core bot features must not require a paid API, external AI service, or local LLM.
 
-## ADR-0006: Lavalink Python Client Not Selected Yet
+## ADR-0006: Python Version
 
-- Status: Pending
+- Status: Accepted
 - Date: 2026-06-12
 
-The Python Lavalink client must not be blindly chosen. Before implementation, the project must verify the current best maintained Python Lavalink client.
+The project will target Python 3.12 for implementation.
 
-Candidate families include:
+Python 3.12 is current enough for long-term dependency support while avoiding the extra churn of adopting the newest Python release immediately. The initial Dockerfile should use an official Python 3.12 image unless a dependency forces a documented change.
 
-- Wavelink
-- Mafic
-- Pomice
-- lavalink.py
+## ADR-0007: Discord Python Library
 
-Selection criteria should include maintenance activity, Lavalink v4 compatibility, Discord library compatibility, documentation quality, async behavior, release cadence, and migration risk.
+- Status: Accepted
+- Date: 2026-06-12
+
+The project will use `discord.py` as the Discord library.
+
+`discord.py` fits the project direction because it is async-first, supports Discord application commands and interactions, is widely used, and is directly supported by the preferred Lavalink client choice. Slash commands should use the native `discord.app_commands` / interaction APIs rather than third-party slash-command adapters.
+
+## ADR-0008: Lavalink Python Client
+
+- Status: Accepted
+- Date: 2026-06-12
+
+The project will use Mafic as the preferred initial Python Lavalink client.
+
+Lavalink remains the core audio backend. The audio layer must still wrap Mafic behind project-owned interfaces so queue management, playlist behavior, local-library handling, and Discord UI code do not depend directly on client internals.
+
+This decision remains reversible until Phase 1 validates an actual Docker/Lavalink connection and minimal playback test.
+
+### Client Comparison
+
+Verified options from the Lavalink official client list and current package/project pages:
+
+- Mafic: targets discord.py and related forks, is properly typehinted, has documentation, and covers node management, players, events, tracks, playlists, filters, errors, and utility APIs. It appears better suited for a maintainable new project than Wavelink. Risk: low to medium until Phase 1 validates the stack.
+- lavalink.py: maintained releases and library-agnostic design. It is the strongest fallback if Mafic fails Phase 1 validation, though it may require more project-owned integration code than a discord.py-focused client. Risk: medium.
+- Pomice: viable secondary alternative with discord.py focus and maintained releases, but weaker visible Python 3.12 packaging signal and GPL licensing are less attractive for this project. Risk: medium.
+- Wavelink: rejected for new development because its own README states that Wavelink is no longer maintained, even though it still appears on Lavalink's client list and PyPI. Risk: high for new project adoption.
+- SonoLink: promising modern Lavalink v4 wrapper with Python 3.12+ and multi-library support, but newer and less proven. Risk: medium.
+- lavaplay.py: supports Lavalink v4 and Python 3.12, but documentation and API maturity appear weaker for a discord.py-first bot. Risk: medium to high.
+- hikari-ongaku: relevant only if the project chooses Hikari instead of discord.py. Risk for this project: high due to Discord-library mismatch.
+
+Decision: choose Mafic as the preferred initial Lavalink Python client.
+
+Fallback order:
+
+1. lavalink.py if Mafic fails Phase 1 validation.
+2. Pomice if both Mafic and lavalink.py prove unsuitable.
+
+Implementation notes:
+
+- Verify local file playback behavior against the mounted read-only music library during the Lavalink stack phase.
+- Keep Lavalink connection settings environment-driven.
+- Avoid leaking Mafic-specific objects outside the audio module unless a later ADR explicitly accepts that coupling.
+
+## ADR-0009: Python Packaging and Tooling
+
+- Status: Accepted
+- Date: 2026-06-12
+
+The project will use a standard Python `src/` layout with project metadata and tooling in `pyproject.toml`.
+
+Initial tooling:
+
+- `pytest` for tests.
+- `ruff` for linting and formatting.
+- `pyright` for static type checking.
+- Dockerfile added later during the minimal Docker/Lavalink stack phase.
+
+The package should keep application code under `src/`, tests under `tests/`, and documentation under `docs/`. Tooling configuration should stay public-safe and must not reference private paths or infrastructure.

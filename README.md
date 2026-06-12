@@ -21,6 +21,14 @@ This repository is designed to be public-repository safe. It must not contain Di
 
 This is the project foundation only. The bot is not implemented yet.
 
+## Selected Stack
+
+- Python 3.12.
+- `discord.py` for Discord interactions.
+- Mafic for initial Lavalink client integration.
+- `src/` package layout with `pyproject.toml`.
+- `pytest`, `ruff`, and `pyright` for tests, linting/formatting, and type checking.
+
 ## Repository Safety
 
 Use example files as templates:
