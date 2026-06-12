@@ -104,6 +104,11 @@ The Phase 4 queue is not persisted to SQLite yet. Ratings, recommendations, web
 playback, autoplay radio, playlist workflows, like/superlike,
 dislike/superdislike, and same-artist actions remain planned for later phases.
 
+`/play_all` feeds the in-memory queue from already indexed local library rows. It
+filters to tracks whose indexed extension is `.mp3`, shuffles them, starts the
+first track when idle, and appends the remaining tracks to the upcoming queue.
+Non-MP3 indexed files are intentionally ignored by `/play_all` for now.
+
 ### Playlist Service
 
 Manages saved playlists, playlist import, playlist editing, and compatibility with old JSON playlist data.

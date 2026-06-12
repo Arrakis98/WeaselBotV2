@@ -105,6 +105,9 @@ class LocalLibraryService:
     def stats(self) -> int:
         return self.tracks.count_local()
 
+    def list_indexed_mp3_tracks(self) -> list[Track]:
+        return select_mp3_tracks(self.tracks.list_local())
+
     def playback_path(self, track: Track) -> Path:
         if not track.relative_path:
             raise ValueError("Track does not have a local relative path.")
@@ -134,6 +137,10 @@ def normalize_search_text(value: str | None) -> str:
     decomposed = unicodedata.normalize("NFKD", value)
     without_accents = "".join(char for char in decomposed if not unicodedata.combining(char))
     return " ".join(without_accents.casefold().split())
+
+
+def select_mp3_tracks(tracks: list[Track]) -> list[Track]:
+    return [track for track in tracks if (track.extension or "").casefold() == ".mp3"]
 
 
 def _to_stored_relative_path(relative: Path) -> str | None:

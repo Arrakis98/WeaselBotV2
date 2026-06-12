@@ -78,6 +78,7 @@ Expected commands after Discord sync completes:
 - `/library_stats`
 - `/search_local`
 - `/play_local`
+- `/play_all`
 - `/pause`
 - `/resume`
 - `/stop`
@@ -110,6 +111,10 @@ Phase 4 adds local queue navigation on top of the Phase 3.5 controls. Queue stat
 is in memory per guild and is lost when the bot restarts. Like/superlike,
 dislike/superdislike, same-artist actions, persisted playlists, web playback, and
 autoplay radio are planned for later phases.
+
+`/play_all` uses the SQLite index created by `/library_scan`; it does not scan the
+filesystem at command time. It currently queues indexed `.mp3` files only and
+intentionally ignores other indexed extensions.
 
 ## Troubleshooting
 

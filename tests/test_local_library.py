@@ -6,8 +6,13 @@ import pytest
 
 from weasel_bot_v2.config import DatabaseConfig
 from weasel_bot_v2.database import SQLiteDatabase
+from weasel_bot_v2.models import Track
 from weasel_bot_v2.repositories import TrackRepository
-from weasel_bot_v2.services.local_library import LocalLibraryService, safe_relative_path
+from weasel_bot_v2.services.local_library import (
+    LocalLibraryService,
+    safe_relative_path,
+    select_mp3_tracks,
+)
 
 
 @pytest.fixture
@@ -119,6 +124,34 @@ def test_scan_upserts_existing_local_track(
     assert tracks.count_local() == 1
 
 
+def test_list_indexed_mp3_tracks_ignores_non_mp3_extensions(
+    library: tuple[Path, LocalLibraryService, TrackRepository],
+) -> None:
+    music_root, service, _ = library
+    _write_audio(music_root / "one.mp3")
+    _write_audio(music_root / "two.flac")
+    _write_audio(music_root / "three.MP3")
+    service.scan()
+
+    mp3_tracks = service.list_indexed_mp3_tracks()
+
+    assert [track.relative_path for track in mp3_tracks] == ["one.mp3", "three.MP3"]
+
+
+def test_select_mp3_tracks_filters_by_extension_only() -> None:
+    tracks = [
+        _track("one.mp3", ".mp3"),
+        _track("two.flac", ".flac"),
+        _track("three.MP3", ".MP3"),
+        _track("missing-extension", None),
+    ]
+
+    assert [track.relative_path for track in select_mp3_tracks(tracks)] == [
+        "one.mp3",
+        "three.MP3",
+    ]
+
+
 def test_safe_relative_path_rejects_traversal() -> None:
     with pytest.raises(ValueError):
         safe_relative_path("../outside.mp3")
@@ -130,3 +163,14 @@ def test_safe_relative_path_rejects_traversal() -> None:
 def _write_audio(path: Path, *, content: bytes = b"audio") -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(content)
+
+
+def _track(relative_path: str, extension: str | None) -> Track:
+    return Track(
+        source="local",
+        source_id=relative_path,
+        relative_path=relative_path,
+        file_name=relative_path,
+        display_title=relative_path,
+        extension=extension,
+    )

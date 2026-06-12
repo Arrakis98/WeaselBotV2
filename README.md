@@ -20,9 +20,9 @@ This repository is designed to be public-repository safe. It must not contain Di
 ## Current Status
 
 Phase 4 provides the Docker/Lavalink stack, core SQLite architecture, local
-library indexing, local search, local `/play_local` playback, basic player
-controls, a Discord Now Playing control panel, and an in-memory per-guild local
-playback queue.
+library indexing, local search, local `/play_local` playback, `/play_all` for
+shuffled indexed MP3 queues, basic player controls, a Discord Now Playing
+control panel, and an in-memory per-guild local playback queue.
 
 ## Selected Stack
 
@@ -86,6 +86,7 @@ Expected Discord slash commands after the bot logs in:
 - `/library_stats`
 - `/search_local`
 - `/play_local`
+- `/play_all`
 - `/pause`
 - `/resume`
 - `/stop`

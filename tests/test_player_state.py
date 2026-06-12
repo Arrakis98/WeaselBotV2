@@ -99,6 +99,63 @@ def test_start_or_enqueue_adds_to_queue_when_already_playing() -> None:
     assert state.upcoming == [second]
 
 
+def test_start_or_enqueue_many_empty_library_behavior() -> None:
+    state = GuildPlayerState(guild_id=123)
+
+    action, current, queued_count = state.start_or_enqueue_many([])
+
+    assert action == "empty"
+    assert current is None
+    assert queued_count == 0
+    assert state.current_track is None
+    assert state.queue_length == 0
+
+
+def test_start_or_enqueue_many_idle_starts_first_and_queues_rest() -> None:
+    first = _track("first.mp3")
+    second = _track("second.mp3")
+    third = _track("third.mp3")
+    state = GuildPlayerState(guild_id=123)
+
+    action, current, queued_count = state.start_or_enqueue_many([first, second, third])
+
+    assert action == "started"
+    assert current == first
+    assert queued_count == 2
+    assert state.current_track == first
+    assert state.upcoming == [second, third]
+    assert state.queue_length == 2
+
+
+def test_start_or_enqueue_many_active_queues_all_without_replacing_current() -> None:
+    current = _track("current.mp3")
+    first = _track("first.mp3")
+    second = _track("second.mp3")
+    state = GuildPlayerState(guild_id=123, current_track=current)
+
+    action, started, queued_count = state.start_or_enqueue_many([first, second])
+
+    assert action == "queued"
+    assert started is None
+    assert queued_count == 2
+    assert state.current_track == current
+    assert state.upcoming == [first, second]
+    assert state.queue_length == 2
+
+
+def test_enqueue_many_returns_start_position_and_count() -> None:
+    state = GuildPlayerState(guild_id=123, upcoming=[_track("existing.mp3")])
+
+    start_position, queued_count = state.enqueue_many([
+        _track("first.mp3"),
+        _track("second.mp3"),
+    ])
+
+    assert start_position == 2
+    assert queued_count == 2
+    assert state.queue_length == 3
+
+
 def test_skip_with_next_track_moves_current_to_history() -> None:
     first = _track("first.mp3")
     second = _track("second.mp3")

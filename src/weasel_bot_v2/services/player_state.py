@@ -44,12 +44,30 @@ class GuildPlayerState:
         self.upcoming.append(track)
         return len(self.upcoming)
 
+    def enqueue_many(self, tracks: list[Track]) -> tuple[int, int]:
+        if not tracks:
+            return len(self.upcoming) + 1, 0
+        start_position = len(self.upcoming) + 1
+        self.upcoming.extend(tracks)
+        return start_position, len(tracks)
+
     def start_or_enqueue(self, track: Track) -> tuple[str, int | None]:
         if self.current_track is None:
             self.set_current_track(track)
             return "started", None
         position = self.enqueue(track)
         return "queued", position
+
+    def start_or_enqueue_many(self, tracks: list[Track]) -> tuple[str, Track | None, int]:
+        if not tracks:
+            return "empty", None, 0
+        if self.current_track is None:
+            first = tracks[0]
+            self.set_current_track(first)
+            _, queued_count = self.enqueue_many(tracks[1:])
+            return "started", first, queued_count
+        _, queued_count = self.enqueue_many(tracks)
+        return "queued", None, queued_count
 
     def pop_next(self) -> Track | None:
         if not self.upcoming:

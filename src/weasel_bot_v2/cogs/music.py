@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import random
 from typing import Any, cast
 
 import discord
@@ -91,6 +92,64 @@ class MusicCog(commands.Cog):
         await interaction.followup.send(result.message, ephemeral=True)
         if result.ok:
             await self._send_now_playing_panel(interaction)
+
+    @app_commands.command(
+        name="play_all",
+        description="Shuffle all indexed local MP3 tracks into the playback queue.",
+    )
+    async def play_all(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        library = self._library_service()
+        tracks = library.list_indexed_mp3_tracks()
+        if not tracks:
+            await interaction.followup.send(
+                "No indexed local MP3 tracks found. Run /library_scan first.",
+                ephemeral=True,
+            )
+            return
+
+        random.shuffle(tracks)
+        guild = interaction.guild
+        if guild is None:
+            await interaction.followup.send(
+                "This command can only be used in a server.",
+                ephemeral=True,
+            )
+            return
+
+        state = self.bot.player_states.get_or_create(guild.id)
+        playback = self._playback_service()
+        found_count = len(tracks)
+        if state.has_track:
+            start_position, queued_count = state.enqueue_many(tracks)
+            await interaction.followup.send(
+                (
+                    f"Found {found_count} indexed MP3 tracks. "
+                    f"Added {queued_count} to the queue starting at position {start_position}. "
+                    f"Queue length is now {state.queue_length}."
+                ),
+                ephemeral=True,
+            )
+            return
+
+        first = tracks[0]
+        remaining = tracks[1:]
+        result = await playback.play_local_track(interaction=interaction, track=first)
+        if not result.ok:
+            await interaction.followup.send(result.message, ephemeral=True)
+            return
+
+        state.enqueue_many(remaining)
+        await interaction.followup.send(
+            (
+                f"Found {found_count} indexed MP3 tracks. "
+                f"Now playing: {track_title(first)}. "
+                f"Queued {len(remaining)} more track(s). "
+                f"Queue length is now {state.queue_length}."
+            ),
+            ephemeral=True,
+        )
+        await self._send_now_playing_panel(interaction)
 
     @app_commands.command(name="pause", description="Pause the current local track.")
     async def pause_track(self, interaction: discord.Interaction) -> None:
