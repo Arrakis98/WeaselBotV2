@@ -123,6 +123,31 @@ it. This preference is independent from the in-memory queue and from user
 ratings. Loop stability, long pause behavior, and occasional panel sync issues
 remain intentionally deferred.
 
+Phase 5.2 moves the Discord Now Playing panel behind an in-memory authoritative
+panel registry. Each guild has at most one active tracked panel record containing
+the guild ID, channel ID, message ID, current view reference, and a per-guild
+`asyncio.Lock`. Slash commands and button callbacks use the same lock when they
+mutate playback, queue, volume, loop, or rating state and then refresh the
+panel. This prevents duplicate panel creation and reduces stale updates from
+simultaneous interactions.
+
+Panel rendering is centralized in `NowPlayingPanelService`. A refresh builds a
+new snapshot from the current source of truth: active track metadata, paused
+state, volume, loop state, queue length, next track preview, previous-track
+availability, rating totals, Lavalink availability, and voice connection state.
+The service edits the tracked Discord message whenever possible. If that message
+was deleted, expired, or cannot be fetched, the service clears the old reference
+and recreates the panel in the current interaction channel when a track is
+active. Missing channel or permission failures are logged with safe guild,
+channel, message, and error-class details and must not crash playback.
+
+The panel view uses `timeout=None` and stable component `custom_id` values so the
+buttons remain usable during long listening sessions while the bot process is
+running. The project does not yet register persistent views on startup, so panel
+button persistence across a full bot restart is not guaranteed. Loop behavior is
+still marked experimental, and the known long-pause and loop instability issues
+remain deferred outside Phase 5.2.
+
 ### Playlist Service
 
 Manages saved playlists, playlist import, playlist editing, and compatibility with old JSON playlist data.

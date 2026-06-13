@@ -24,7 +24,10 @@ library indexing, local search, local `/play_local` playback, `/play_all` for
 shuffled indexed MP3 queues, basic player controls, a Discord Now Playing
 control panel, an in-memory per-guild local playback queue, and persisted user
 ratings for local tracks. Phase 5.1 adds a persistent per-guild volume
-preference so server volume survives bot restarts.
+preference so server volume survives bot restarts. Phase 5.2 makes the Now
+Playing panel authoritative per guild during the current bot process: commands
+and buttons refresh one tracked panel instead of creating a new permanent panel
+for every action.
 
 ## Selected Stack
 
@@ -109,8 +112,19 @@ Expected Discord slash commands after the bot logs in:
 The Now Playing panel also exposes active Like, SuperLike, Dislike, and
 SuperDislike buttons. Ratings are stored for later personalization work, but they
 do not drive recommendations yet. Queue state and ratings remain separate from
-the guild volume preference. Loop, long pause, and occasional panel sync
-limitations are still intentionally deferred.
+the guild volume preference.
+
+The active Now Playing panel is tracked in memory by guild. Playback commands,
+queue-changing commands, volume changes, rating actions, button callbacks, and
+natural track advance rebuild the panel from current player state, queue state,
+saved/current volume, loop state, and rating counts. If the tracked message was
+deleted or is no longer accessible, the bot attempts to recreate it in the
+current interaction channel and update the stored reference.
+
+Panel controls use long-lived Discord views for the lifetime of the running bot,
+but full restart persistence is not guaranteed because persistent view
+registration is not implemented yet. Loop behavior remains experimental, and the
+known long-pause and loop instability issues remain intentionally deferred.
 
 Lavalink is only reachable on the internal Docker network by default. The example
 compose file mounts `./music` as read-only example storage and does not expose

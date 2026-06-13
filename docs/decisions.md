@@ -124,3 +124,23 @@ container as `/music/France/Renaud/Mistral gagnant.mp3` is stored as
 This keeps the repository public-safe, makes database backups portable across
 hosts, and lets private host mount paths remain in ignored local deployment
 configuration.
+
+## ADR-0011: Authoritative In-Memory Now Playing Panel
+
+- Status: Accepted
+- Date: 2026-06-13
+
+The Discord Now Playing panel is authoritative per guild during the lifetime of
+the running bot process. The bot keeps an in-memory registry keyed by guild ID
+with the channel ID, message ID, view reference, and per-guild `asyncio.Lock`.
+
+Panel updates are centralized in `NowPlayingPanelService`. Commands and button
+callbacks mutate playback, queue, volume, loop, or rating state and then ask the
+service to rebuild the panel from current state. The service edits the tracked
+message when possible and recreates it when the tracked message was deleted or
+cannot be fetched.
+
+This keeps Phase 5.2 small and self-hostable without adding a database table for
+Discord message state. Restart persistence is intentionally not claimed because
+persistent view registration and durable message references are not implemented
+yet.

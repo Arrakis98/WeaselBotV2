@@ -11,6 +11,7 @@ from weasel_bot_v2.config import Settings
 from weasel_bot_v2.database import SQLiteDatabase
 from weasel_bot_v2.logging_config import configure_logging
 from weasel_bot_v2.services.audio import AudioPlaybackService
+from weasel_bot_v2.services.now_playing_panel import NowPlayingPanelRegistry
 from weasel_bot_v2.services.player_state import PlayerStateStore
 
 LOGGER = logging.getLogger(__name__)
@@ -33,6 +34,7 @@ class WeaselBot(commands.Bot):
         self.settings = settings
         self.database = SQLiteDatabase(settings.database)
         self.player_states = PlayerStateStore()
+        self.now_playing_panels = NowPlayingPanelRegistry()
         self.lavalink_pool: Any | None = None
         self.lavalink_available = False
         self.lavalink_status = "not configured"
@@ -121,6 +123,12 @@ class WeaselBot(commands.Bot):
 
     async def on_track_end(self, event: object) -> None:
         await AudioPlaybackService(self, self.settings.bot.music_library).handle_track_end(event)
+        player = getattr(event, "player", None)
+        guild = getattr(player, "guild", None)
+        if guild is not None:
+            from weasel_bot_v2.services.now_playing_panel import NowPlayingPanelService
+
+            await NowPlayingPanelService(self).refresh(guild=guild, reason="track_end")
 
     async def _sync_commands(self) -> None:
         if self.settings.discord_test_guild_id is not None:
