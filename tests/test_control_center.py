@@ -13,6 +13,8 @@ from weasel_bot_v2.database import SQLiteDatabase
 from weasel_bot_v2.models import Rating, Track
 from weasel_bot_v2.repositories import RatingRepository, TrackRepository
 from weasel_bot_v2.services.control_center import (
+    AdvancedActionsView,
+    AdvancedConfirmationView,
     ControlCenterService,
     ControlCenterView,
     OpenControlPanelView,
@@ -84,9 +86,103 @@ def test_idle_control_center_disables_unavailable_controls(database: SQLiteDatab
         if isinstance(item, discord.ui.Button) and item.disabled
     ]
 
-    assert enabled_labels == ["Queue"]
+    assert enabled_labels == ["Queue", "More"]
     assert "Skip" in disabled_labels
     assert "Like" in disabled_labels
+
+
+@pytest.mark.asyncio
+async def test_more_actions_navigation_and_disabled_idle_state(database: SQLiteDatabase) -> None:
+    bot = _FakeBot(database)
+    guild = _FakeGuild(guild_id=123, voice_client=None)
+    interaction = _FakeInteraction(guild=guild)
+
+    await ControlCenterService(bot).run_action(  # type: ignore[arg-type]
+        interaction,  # type: ignore[arg-type]
+        "more",
+    )
+
+    view = interaction.edited_views[0]
+    assert isinstance(view, AdvancedActionsView)
+    enabled = _button_labels(view)
+    assert enabled == ["Back to Control Center"]
+
+
+@pytest.mark.asyncio
+async def test_more_actions_return_to_control_center_uses_fresh_state(
+    database: SQLiteDatabase,
+) -> None:
+    bot = _FakeBot(database)
+    guild = _FakeGuild(guild_id=123, voice_client=None)
+    interaction = _FakeInteraction(guild=guild)
+    bot.player_states.get_or_create(123).current_track = _indexed_track(
+        database,
+        "Artist/fresh.mp3",
+    )
+
+    await ControlCenterService(bot).run_advanced_action(  # type: ignore[arg-type]
+        interaction,  # type: ignore[arg-type]
+        "back_to_controls",
+    )
+
+    assert "fresh" in interaction.edited_messages[0]
+    assert isinstance(interaction.edited_views[0], ControlCenterView)
+
+
+@pytest.mark.asyncio
+async def test_more_actions_clear_queue_requires_confirmation_and_preserves_current(
+    database: SQLiteDatabase,
+) -> None:
+    bot = _FakeBot(database)
+    guild = _FakeGuild(guild_id=123, voice_client=object())
+    interaction = _FakeInteraction(guild=guild)
+    current = _indexed_track(database, "Artist/current.mp3")
+    queued = _indexed_track(database, "Artist/queued.mp3")
+    state = bot.player_states.get_or_create(123)
+    state.current_track = current
+    state.upcoming = [queued]
+
+    await ControlCenterService(bot).run_advanced_action(  # type: ignore[arg-type]
+        interaction,  # type: ignore[arg-type]
+        "clear_queue",
+    )
+    assert isinstance(interaction.edited_views[0], AdvancedConfirmationView)
+
+    await ControlCenterService(bot).run_advanced_action(  # type: ignore[arg-type]
+        interaction,  # type: ignore[arg-type]
+        "clear_queue",
+        confirmed=True,
+    )
+
+    assert state.current_track == current
+    assert state.upcoming == []
+    assert interaction.edit_count == 1
+    assert len(interaction.followup_messages) == 1
+    assert "More Actions" in interaction.followup_messages[0]
+    assert "Cleared 1 queued track(s)." in interaction.followup_messages[0]
+
+
+@pytest.mark.asyncio
+async def test_more_actions_leave_reuses_hard_reset(database: SQLiteDatabase) -> None:
+    bot = _FakeBot(database)
+    player = _FakePlayer()
+    guild = _FakeGuild(guild_id=123, voice_client=player)
+    interaction = _FakeInteraction(guild=guild)
+    bot.player_states.get_or_create(123).current_track = _indexed_track(
+        database,
+        "Artist/current.mp3",
+    )
+
+    await ControlCenterService(bot).run_advanced_action(  # type: ignore[arg-type]
+        interaction,  # type: ignore[arg-type]
+        "leave",
+        confirmed=True,
+    )
+
+    assert player.stop_count == 1
+    assert player.disconnected is True
+    assert bot.player_states.get_or_create(123).current_track is None
+    assert interaction.edit_count == 1
 
 
 @pytest.mark.asyncio
@@ -244,6 +340,27 @@ async def test_successful_play_all_acknowledgement_includes_control_panel_opener
     assert _button_labels(interaction.followup_views[0]) == ["Open Control Panel"]
 
 
+@pytest.mark.asyncio
+async def test_manual_skip_uses_single_compact_public_acknowledgement(
+    database: SQLiteDatabase,
+) -> None:
+    bot = _FakeBot(database)
+    cog = MusicCog(cast(Any, bot))
+    player = _FakePlayer()
+    guild = _FakeGuild(guild_id=123, voice_client=player)
+    interaction = _FakeInteraction(guild=guild)
+    bot.player_states.get_or_create(123).current_track = _indexed_track(
+        database,
+        "Artist/current.mp3",
+    )
+
+    await _run_slash(cog, "skip", interaction)
+
+    assert interaction.response_ephemeral == [False]
+    assert interaction.response_messages == ["Skipped\nSkipped. The queue is empty."]
+    assert interaction.followup_messages == []
+
+
 def test_control_center_custom_ids_are_stable_and_unique() -> None:
     ids = control_center_custom_ids()
 
@@ -317,9 +434,13 @@ class _FakeGuild:
 class _FakePlayer:
     def __init__(self) -> None:
         self.stop_count = 0
+        self.disconnected = False
 
     async def stop(self) -> None:
         self.stop_count += 1
+
+    async def disconnect(self) -> None:
+        self.disconnected = True
 
 
 class _FakeLibrary:

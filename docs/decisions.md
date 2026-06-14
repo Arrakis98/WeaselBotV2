@@ -193,3 +193,46 @@ Mafic/Lavalink `set_volume` path. Values remain clamped from 0 to 200, and value
 above 100 are allowed with a clipping warning. ReplayGain, normalization filters,
 or automatic loudness analysis are intentionally not implemented by this
 decision.
+
+## ADR-0014: Personal Control Center And Compact Activity Messages
+
+- Status: Accepted
+- Date: 2026-06-14
+
+The public Now Playing panel remains the authoritative public panel per guild,
+while `/controls` and the `Open Control Panel` button render personal ephemeral
+control centers. Personal controls call the same application services as slash
+commands and public Components V2 buttons, then refresh the personal view and
+the public panel when relevant.
+
+More Actions is structured as an ephemeral advanced-actions view, not a second
+public panel. Destructive session actions such as clearing the future queue or
+leaving voice require confirmation. Unsupported future features are omitted
+rather than exposed as fake working actions.
+
+Successful playback actions may emit one compact public acknowledgement with an
+`Open Control Panel` launcher. Automated track-end advancement should refresh
+state without creating uncontrolled channel messages.
+
+## ADR-0015: Reversible SuperDislike Quarantine
+
+- Status: Accepted
+- Date: 2026-06-14
+
+SuperDislike library moderation must move files to a reversible quarantine; it
+must never permanently delete music files. The active library stays read-only at
+`/music` for both bot and Lavalink. The bot alone may receive configurable
+writable moderation mounts at `/library_admin/music` and
+`/library_admin/quarantine/super_disliked`.
+
+The database stores quarantine audit rows in `track_quarantine` and marks moved
+tracks unavailable through `tracks.is_available`. Local playback and `/play_all`
+filter unavailable tracks out, while ratings and metadata remain intact for
+audit and restoration.
+
+Automatic SuperDislike quarantine is disabled by default. When enabled, the
+sequence is: capture current indexed track, save SuperDislike, invoke the shared
+skip action exactly once, then quarantine the captured previous track. If the
+move fails, the rating and skip remain completed. Administrative purge,
+inspection, and restoration commands use record IDs and indexed tracks only;
+they never accept raw filesystem paths.

@@ -130,6 +130,23 @@ class WeaselBot(commands.Bot):
 
             await NowPlayingPanelService(self).refresh(guild=guild, reason="track_end")
 
+    async def on_voice_state_update(
+        self,
+        member: discord.Member,
+        before: discord.VoiceState,
+        after: discord.VoiceState,
+    ) -> None:
+        if self.user is None or member.id != self.user.id:
+            return
+        if before.channel is None or after.channel is not None:
+            return
+        if member.guild is None:
+            return
+
+        from weasel_bot_v2.services.voice_status import VoiceChannelStatusService
+
+        await VoiceChannelStatusService(self).clear(member.guild)
+
     async def _sync_commands(self) -> None:
         if self.settings.discord_test_guild_id is not None:
             guild = discord.Object(id=self.settings.discord_test_guild_id)

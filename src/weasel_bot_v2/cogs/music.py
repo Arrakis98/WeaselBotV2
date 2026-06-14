@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import inspect
 import random
+from collections.abc import Sequence
 from typing import Any, cast
 
 import discord
@@ -8,7 +10,9 @@ from discord import app_commands
 from discord.ext import commands
 
 from weasel_bot_v2.bot import WeaselBot
+from weasel_bot_v2.models import QuarantineRecord
 from weasel_bot_v2.repositories import (
+    QuarantineRepository,
     RatingRepository,
     TrackRepository,
     UserRepository,
@@ -23,6 +27,11 @@ from weasel_bot_v2.services.now_playing_panel import (
 )
 from weasel_bot_v2.services.player_actions import PlayerActionService
 from weasel_bot_v2.services.player_state import GuildPlayerState
+from weasel_bot_v2.services.quarantine import (
+    PurgePreview,
+    QuarantineMoveResult,
+    QuarantineService,
+)
 from weasel_bot_v2.services.ratings import RatingService
 
 
@@ -216,11 +225,19 @@ class MusicCog(commands.Cog):
 
     @app_commands.command(name="stop", description="Stop playback and stay in voice.")
     async def stop_track(self, interaction: discord.Interaction) -> None:
-        await self._run_player_action(interaction, lambda service, guild: service.stop(guild))
+        await self._run_player_action(
+            interaction,
+            lambda service, guild: service.stop(guild),
+            public_success_action="Playback stopped",
+        )
 
     @app_commands.command(name="leave", description="Stop playback and leave voice.")
     async def leave_voice(self, interaction: discord.Interaction) -> None:
-        await self._run_player_action(interaction, lambda service, guild: service.leave(guild))
+        await self._run_player_action(
+            interaction,
+            lambda service, guild: service.leave(guild),
+            public_success_action="Left voice channel",
+        )
 
     @app_commands.command(name="volume", description="Show or set this server's volume.")
     async def volume(
@@ -344,11 +361,19 @@ class MusicCog(commands.Cog):
 
     @app_commands.command(name="skip", description="Skip to the next queued local track.")
     async def skip_track(self, interaction: discord.Interaction) -> None:
-        await self._run_player_action(interaction, lambda service, guild: service.skip(guild))
+        await self._run_player_action(
+            interaction,
+            lambda service, guild: service.skip(guild),
+            public_success_action="Skipped",
+        )
 
     @app_commands.command(name="back", description="Go back to the previous local track.")
     async def back_track(self, interaction: discord.Interaction) -> None:
-        await self._run_player_action(interaction, lambda service, guild: service.back(guild))
+        await self._run_player_action(
+            interaction,
+            lambda service, guild: service.back(guild),
+            public_success_action="Previous track",
+        )
 
     @app_commands.command(name="clear_queue", description="Clear upcoming local tracks.")
     async def clear_queue(self, interaction: discord.Interaction) -> None:
@@ -369,6 +394,13 @@ class MusicCog(commands.Cog):
                     channel=cast(discord.abc.Messageable | None, interaction.channel),
                     reason="clear_queue",
                 )
+        if result.ok:
+            await interaction.response.send_message(
+                f"Queue cleared\n{result.message}",
+                ephemeral=False,
+                view=OpenControlPanelView(self.bot),
+            )
+            return
         await interaction.response.send_message(result.message, ephemeral=True)
 
     @app_commands.command(
@@ -437,6 +469,94 @@ class MusicCog(commands.Cog):
         )
         await interaction.response.send_message(result.message, ephemeral=True)
 
+    @app_commands.command(
+        name="purge_superdisliked",
+        description="Preview or move SuperDisliked tracks into reversible quarantine.",
+    )
+    async def purge_superdisliked(
+        self,
+        interaction: discord.Interaction,
+        execute: bool = False,
+    ) -> None:
+        guild = interaction.guild
+        if guild is None:
+            await interaction.response.send_message(
+                "This command can only be used in a server.",
+                ephemeral=True,
+            )
+            return
+        if not await self._is_admin_or_owner(interaction):
+            await interaction.response.send_message(
+                "Only an administrator or bot owner can run this moderation command.",
+                ephemeral=True,
+            )
+            return
+
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        service = QuarantineService(self.bot)
+        if not execute:
+            preview = service.preview_superdisliked(guild.id)
+            await interaction.followup.send(format_purge_preview(preview), ephemeral=True)
+            return
+
+        panel = NowPlayingPanelService(self.bot)
+        async with panel.lock_for(guild.id):
+            excluded: set[int] = set()
+            state = self.bot.player_states.get(guild.id)
+            current = state.current_track if state is not None else None
+            if current is not None and current.id is not None and _track_has_superdislike(
+                self.bot.database,
+                guild.id,
+                current.id,
+            ):
+                skip_result = await self._playback_service().skip(guild)
+                if not skip_result.ok:
+                    excluded.add(current.id)
+            result = service.purge_superdisliked(
+                guild_id=guild.id,
+                requested_by_user_id=interaction.user.id,
+                exclude_track_ids=excluded,
+            )
+            await panel.refresh_locked(
+                guild=guild,
+                channel=cast(discord.abc.Messageable | None, interaction.channel),
+                reason="purge_superdisliked",
+            )
+        await interaction.followup.send(format_quarantine_result(result), ephemeral=True)
+
+    @app_commands.command(
+        name="quarantine_list",
+        description="List recent reversible library quarantine records.",
+    )
+    async def quarantine_list(self, interaction: discord.Interaction, limit: int = 10) -> None:
+        if not await self._is_admin_or_owner(interaction):
+            await interaction.response.send_message(
+                "Only an administrator or bot owner can inspect quarantine records.",
+                ephemeral=True,
+            )
+            return
+        records = QuarantineRepository(self.bot.database).list_records(limit=max(1, min(limit, 20)))
+        tracks = TrackRepository(self.bot.database)
+        await interaction.response.send_message(
+            format_quarantine_list(records, tracks),
+            ephemeral=True,
+        )
+
+    @app_commands.command(
+        name="restore_quarantined",
+        description="Restore a quarantined track by quarantine record ID.",
+    )
+    async def restore_quarantined(self, interaction: discord.Interaction, record_id: int) -> None:
+        if not await self._is_admin_or_owner(interaction):
+            await interaction.response.send_message(
+                "Only an administrator or bot owner can restore quarantined tracks.",
+                ephemeral=True,
+            )
+            return
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        result = QuarantineService(self.bot).restore(record_id)
+        await interaction.followup.send(result.message, ephemeral=True)
+
     def _library_service(self) -> LocalLibraryService:
         return LocalLibraryService(
             music_root=self.bot.settings.bot.music_library,
@@ -454,6 +574,17 @@ class MusicCog(commands.Cog):
 
     def _action_service(self) -> PlayerActionService:
         return PlayerActionService(self.bot)
+
+    async def _is_admin_or_owner(self, interaction: discord.Interaction) -> bool:
+        permissions = getattr(interaction.user, "guild_permissions", None)
+        if bool(getattr(permissions, "administrator", False)):
+            return True
+        try:
+            app_info = await self.bot.application_info()
+        except Exception:  # noqa: BLE001 - fall back to guild administrator.
+            return False
+        owner = getattr(app_info, "owner", None)
+        return getattr(owner, "id", None) == interaction.user.id
 
     async def _rate_current_track(
         self,
@@ -488,6 +619,8 @@ class MusicCog(commands.Cog):
         self,
         interaction: discord.Interaction,
         action: Any,
+        *,
+        public_success_action: str | None = None,
     ) -> None:
         guild = interaction.guild
         if guild is None:
@@ -499,12 +632,33 @@ class MusicCog(commands.Cog):
 
         panel = NowPlayingPanelService(self.bot)
         async with panel.lock_for(guild.id):
-            result = await action(self._playback_service(), guild)
+            result_or_awaitable = action(self._playback_service(), guild)
+            result = (
+                await result_or_awaitable
+                if inspect.isawaitable(result_or_awaitable)
+                else result_or_awaitable
+            )
             await panel.refresh_locked(
                 guild=guild,
                 channel=cast(discord.abc.Messageable | None, interaction.channel),
                 reason="slash_player_action",
             )
+        if result.ok and public_success_action is not None:
+            message = compact_player_action_ack(
+                public_success_action,
+                self.bot.player_states.get(guild.id),
+                fallback=result.message,
+            )
+            refreshed_state = self.bot.player_states.get(guild.id)
+            if refreshed_state is not None and refreshed_state.has_track:
+                await interaction.response.send_message(
+                    message,
+                    ephemeral=False,
+                    view=OpenControlPanelView(self.bot),
+                )
+            else:
+                await interaction.response.send_message(message, ephemeral=False)
+            return
         await interaction.response.send_message(result.message, ephemeral=True)
 
     async def _refresh_panel(self, interaction: discord.Interaction, *, reason: str) -> None:
@@ -544,6 +698,72 @@ def compact_track_metadata(track: object) -> str | None:
         if value is not None and str(value).strip()
     ]
     return " • ".join(parts) if parts else None
+
+
+def compact_player_action_ack(
+    action: str,
+    state: GuildPlayerState | None,
+    *,
+    fallback: str,
+) -> str:
+    if state is None or state.current_track is None:
+        return f"{action}\n{fallback}"
+    return compact_playback_ack(action, state.current_track)
+
+
+def format_purge_preview(preview: PurgePreview) -> str:
+    lines = [
+        "SuperDislike quarantine preview",
+        f"Eligible tracks: {len(preview.eligible)}",
+        f"Already quarantined: {preview.already_quarantined}",
+        f"Destination: {preview.destination}",
+        "Execution moves shared library files into reversible quarantine.",
+    ]
+    if preview.eligible:
+        lines.append("Sample:")
+        lines.extend(f"- {track_title(track)}" for track in preview.eligible[:10])
+    if preview.cannot_move:
+        lines.append("Cannot move:")
+        lines.extend(f"- {item}" for item in preview.cannot_move[:10])
+    return "\n".join(lines)
+
+
+def format_quarantine_result(result: QuarantineMoveResult) -> str:
+    lines = [
+        "SuperDislike quarantine complete",
+        f"Moved: {result.moved}",
+        f"Skipped: {result.skipped}",
+        f"Already quarantined: {result.already_quarantined}",
+        f"Failed: {result.failed}",
+        f"Removed from future queues: {result.removed_from_queue}",
+    ]
+    if result.failures:
+        lines.append("Failures:")
+        lines.extend(f"- {failure}" for failure in result.failures[:10])
+    return "\n".join(lines)
+
+
+def format_quarantine_list(records: Sequence[QuarantineRecord], tracks: TrackRepository) -> str:
+    if not records:
+        return "No quarantine records found."
+    lines = ["Recent quarantine records:"]
+    for record in records:
+        track = tracks.get(record.track_id)
+        title = track_title(track) if track is not None else f"Track {record.track_id}"
+        metadata = compact_track_metadata(track) if track is not None else None
+        suffix = f" — {metadata}" if metadata else ""
+        lines.append(
+            f"#{record.id} {title}{suffix} | {record.state} | "
+            f"{record.quarantined_at or 'unknown date'}"
+        )
+    return "\n".join(lines)
+
+
+def _track_has_superdislike(database: object, guild_id: int, track_id: int) -> bool:
+    return track_id in RatingRepository(cast(Any, database)).track_ids_for_rating(
+        guild_id,
+        "superdislike",
+    )
 
 
 def prepare_play_all_session(state: GuildPlayerState, guild: object) -> bool:

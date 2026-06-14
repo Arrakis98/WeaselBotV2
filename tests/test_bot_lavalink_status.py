@@ -4,6 +4,7 @@ import asyncio
 import sys
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
 
@@ -83,5 +84,36 @@ async def test_lavalink_connection_starts_only_once(monkeypatch: pytest.MonkeyPa
     await first_task
 
     assert call_count == 1
+
+    await bot.close()
+
+
+@pytest.mark.asyncio
+async def test_bot_voice_disconnect_clears_voice_channel_status() -> None:
+    class FakeVoiceChannel:
+        def __init__(self) -> None:
+            self.status_updates: list[str | None] = []
+
+        async def edit(self, *, status: str | None) -> None:
+            self.status_updates.append(status)
+
+    channel = FakeVoiceChannel()
+    guild = SimpleNamespace(id=123, voice_client=SimpleNamespace(channel=channel))
+    member = SimpleNamespace(id=99, guild=guild)
+    before = SimpleNamespace(channel=channel)
+    after = SimpleNamespace(channel=None)
+    bot = WeaselBot(_settings(LavalinkConfig(password=None)))
+    bot_any = cast(Any, bot)
+    bot_any._connection.user = SimpleNamespace(id=99)
+    bot_any.voice_channel_statuses = {123: "🎵 Current"}
+
+    await bot.on_voice_state_update(
+        cast(Any, member),
+        cast(Any, before),
+        cast(Any, after),
+    )
+
+    assert channel.status_updates == [None]
+    assert bot_any.voice_channel_statuses[123] is None
 
     await bot.close()

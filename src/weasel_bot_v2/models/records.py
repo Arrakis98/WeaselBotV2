@@ -35,6 +35,7 @@ class Track:
     title: str | None = None
     artist: str | None = None
     duration_ms: int | None = None
+    is_available: bool = True
 
 
 @dataclass(frozen=True)
@@ -86,3 +87,17 @@ class PlaylistItem:
     position: int
     track_id: int
     added_by_user_id: int | None = None
+
+
+@dataclass(frozen=True)
+class QuarantineRecord:
+    track_id: int
+    guild_id: int
+    requested_by_user_id: int
+    reason: str
+    original_relative_path: str
+    quarantine_relative_path: str
+    id: int | None = None
+    quarantined_at: str | None = None
+    restored_at: str | None = None
+    state: str = "quarantined"

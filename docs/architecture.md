@@ -43,12 +43,22 @@ Initial schema bootstrap creates:
 - `play_history`
 - `ratings`
 - `track_volume_overrides`
+- `track_quarantine`
 - `playlists`
 - `playlist_items`
 
-### Read-Only Music Mount
+### Music Mounts And Moderation
 
-The local music library should be mounted read-only into the bot and Lavalink containers. The bot may index and play the library, but it must not modify original music files.
+The active local music library should be mounted read-only at `/music` into the
+bot and Lavalink containers. The bot may index and play that view, and Lavalink
+must keep read-only access to it.
+
+For reversible library moderation, the bot can also receive a separate writable
+admin view of the same active library at `/library_admin/music` and a writable
+quarantine destination at `/library_admin/quarantine/super_disliked`. Lavalink
+does not receive writable moderation mounts. These container paths are
+configurable through `library_moderation`; private host paths belong only in
+ignored deployment files.
 
 Phase 3 stores local tracks by path relative to the configured music root. For
 Docker runtime the root is normally `/music`, and both the bot and Lavalink
@@ -67,6 +77,12 @@ It does not require ID3 tags. Initial metadata guesses come from the relative
 path only: depth 1 has no artist/category, depth 2 guesses the first folder as
 artist, and depth 3 or greater guesses the first folder as category and the
 second as artist.
+
+Quarantined tracks keep their metadata and ratings but set `tracks.is_available`
+to false and receive an audit row in `track_quarantine`. Normal local search and
+`/play_all` read only available local tracks. Restoration moves the file back to
+the validated original relative path, marks the record restored, and makes the
+track playable again without enqueueing it automatically.
 
 ## Application Layers
 
@@ -181,10 +197,28 @@ status, and other diagnostics are not shown on the main panel.
 
 The second row adds private queue, shuffle, and more-actions controls. Queue
 opens an ephemeral preview. Shuffle randomizes only the existing upcoming queue
-and preserves the current track. More Actions opens an ephemeral select menu for
-Show queue and Track information, with future items clearly marked as not
-implemented. Optional thumbnail/mascot artwork is represented as a nullable
-service hook only; no GIF or spritesheet asset is integrated in this phase.
+and preserves the current track. More Actions opens a personal ephemeral
+advanced-actions view with only supported actions: queue details, now-playing
+details, shuffle future queue, clear future queue with confirmation, leave voice
+with confirmation, and return to a freshly rendered control center. Optional
+thumbnail/mascot artwork is represented as a nullable service hook only; no GIF
+or spritesheet asset is integrated in this phase.
+
+`/controls` and the `Open Control Panel` launcher render a personal ephemeral
+control center. Its actions call the same playback, queue, volume, rating, and
+panel-refresh services as slash commands and the public panel. It never creates
+another authoritative public panel.
+
+Compact public activity acknowledgements are used for successful playback
+actions such as starting playback, adding to queue, manual skip, back, queue
+clear, stop, and leave. They reuse the current interaction response where
+possible and avoid emitting messages from automated track-end advancement.
+
+Voice-channel status updates are best-effort. The audio service calls a small
+Discord-facing status service when tracks start or change and when playback
+stops, leaves, or ends empty. The service formats a compact current-track status,
+deduplicates per guild, and logs Discord API failures without interrupting
+playback.
 
 `/stop` and `/leave` are hard playback-session resets. They request Lavalink
 stop, suppress the resulting manual track-end auto-advance, clear current track,
@@ -195,6 +229,12 @@ clears upcoming tracks and preserves the current playback session. When
 is cleared before one shuffled track starts and the rest are queued; when a
 track is actively playing in voice, `/play_all` keeps the existing append
 behavior.
+
+SuperDislike may optionally trigger automatic quarantine. The shared rating
+action captures the current indexed local track, saves the SuperDislike rating,
+invokes the existing skip action exactly once, and only then asks the quarantine
+service to move the captured previous file. If quarantine fails, the rating and
+completed skip remain intact.
 
 ### Playlist Service
 

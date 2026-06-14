@@ -7,10 +7,15 @@ from typing import Any, cast
 import pytest
 
 from weasel_bot_v2.cogs.music import MusicCog
-from weasel_bot_v2.config import DatabaseConfig
+from weasel_bot_v2.config import DatabaseConfig, LibraryModerationConfig
 from weasel_bot_v2.database import SQLiteDatabase
 from weasel_bot_v2.models import Rating, Track, UserRecord
-from weasel_bot_v2.repositories import RatingRepository, TrackRepository, UserRepository
+from weasel_bot_v2.repositories import (
+    QuarantineRepository,
+    RatingRepository,
+    TrackRepository,
+    UserRepository,
+)
 from weasel_bot_v2.services.now_playing_panel import NowPlayingPanelRegistry, NowPlayingPanelService
 from weasel_bot_v2.services.player_state import PlayerStateStore
 
@@ -102,6 +107,47 @@ async def test_slash_superdislike_saves_rating_then_invokes_one_skip(
     )
     assert bot.player_states.get_or_create(123).current_track is None
     assert player.stop_count == 1
+
+
+@pytest.mark.asyncio
+async def test_slash_superdislike_auto_quarantine_runs_after_one_skip(
+    tmp_path: Path,
+) -> None:
+    database = SQLiteDatabase(DatabaseConfig(path=tmp_path / "weasel-test.db"))
+    database.initialize()
+    admin_root = tmp_path / "admin_music"
+    quarantine_root = tmp_path / "quarantine"
+    track_path = admin_root / "Artist/current.mp3"
+    track_path.parent.mkdir(parents=True, exist_ok=True)
+    track_path.write_text("audio", encoding="utf-8")
+    bot = _FakeBot(
+        database,
+        moderation=LibraryModerationConfig(
+            admin_music_path=admin_root,
+            quarantine_path=quarantine_root,
+            auto_quarantine_superdislike=True,
+        ),
+    )
+    cog = MusicCog(cast(Any, bot))
+    player = _FakePlayer()
+    guild = _FakeGuild(guild_id=123, voice_client=player)
+    interaction = _FakeInteraction(guild=guild)
+    current = _indexed_track(database, "Artist/current.mp3")
+    assert current.id is not None
+    bot.player_states.get_or_create(123).current_track = current
+
+    await _run_slash(cog, "superdislike", interaction)
+
+    saved = RatingRepository(database).get_rating(123, 42, current.id)
+    stored = TrackRepository(database).get(current.id)
+    record = QuarantineRepository(database).active_for_track(current.id)
+    assert saved is not None and saved.rating == "superdislike"
+    assert player.stop_count == 1
+    assert bot.player_states.get_or_create(123).current_track is None
+    assert stored is not None and stored.is_available is False
+    assert record is not None and record.reason == "auto_superdislike"
+    assert not track_path.exists()
+    assert (quarantine_root / "Artist/current.mp3").exists()
 
 
 @pytest.mark.asyncio
@@ -198,12 +244,21 @@ def _indexed_track(database: SQLiteDatabase, relative_path: str) -> Track:
 
 
 class _FakeBot:
-    def __init__(self, database: SQLiteDatabase) -> None:
+    def __init__(
+        self,
+        database: SQLiteDatabase,
+        *,
+        moderation: LibraryModerationConfig | None = None,
+    ) -> None:
         self.database = database
         self.player_states = PlayerStateStore()
         self.now_playing_panels = NowPlayingPanelRegistry()
         self.lavalink_available = True
-        self.settings = SimpleNamespace(bot=SimpleNamespace(music_library=Path("/music")))
+        self.settings = SimpleNamespace(
+            bot=SimpleNamespace(music_library=Path("/music")),
+        )
+        if moderation is not None:
+            self.settings.library_moderation = moderation
         self.channels: dict[int, _FakeChannel] = {}
 
     def get_channel(self, channel_id: int) -> _FakeChannel | None:

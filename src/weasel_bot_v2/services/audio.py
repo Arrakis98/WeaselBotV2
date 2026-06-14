@@ -12,6 +12,7 @@ from weasel_bot_v2.models import Track
 from weasel_bot_v2.repositories import GuildSettingsRepository, TrackVolumeOverrideRepository
 from weasel_bot_v2.services.local_library import safe_relative_path
 from weasel_bot_v2.services.player_state import GuildPlayerState
+from weasel_bot_v2.services.voice_status import VoiceChannelStatusService
 from weasel_bot_v2.services.volume import ResolvedVolume, VolumeService
 
 LOGGER = logging.getLogger(__name__)
@@ -131,6 +132,7 @@ class AudioPlaybackService:
             await cast(Any, player).play(lavalink_track)
             await self._apply_volume(player, state.volume)
             state.set_current_track(track)
+            await VoiceChannelStatusService(self.bot).set_for_track(guild, track)
             LOGGER.info("player.play succeeded for local relative_path=%s.", relative.as_posix())
         except Exception as exc:  # noqa: BLE001 - Discord command should report a clean runtime error.
             LOGGER.warning(
@@ -219,6 +221,7 @@ class AudioPlaybackService:
         try:
             if player is not None and hasattr(player, "stop"):
                 await cast(Any, player).stop()
+            await VoiceChannelStatusService(self.bot).clear(guild)
             state.clear_all()
             if player is not None and hasattr(player, "disconnect"):
                 await cast(Any, player).disconnect()
@@ -251,6 +254,7 @@ class AudioPlaybackService:
                     message=f"Could not skip playback: {exc.__class__.__name__}.",
                 )
             state.clear_current_track()
+            await VoiceChannelStatusService(self.bot).clear(guild)
             return PlaybackResult(ok=True, message="Skipped. The queue is empty.")
 
         return await self.play_track_on_player(guild=guild, player=player, track=next_track)
@@ -309,6 +313,7 @@ class AudioPlaybackService:
 
         if track is None:
             state.clear_current_track()
+            await VoiceChannelStatusService(self.bot).clear(guild)
             return
 
         await self.play_track_on_player(guild=guild, player=player, track=track)

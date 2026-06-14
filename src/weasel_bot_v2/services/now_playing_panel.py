@@ -623,20 +623,9 @@ class NowPlayingPanelService:
         await send_ephemeral_once(interaction, result.message)
 
     async def show_more_actions(self, interaction: discord.Interaction) -> None:
-        guild = interaction.guild
-        snapshot = self.snapshot_for(guild) if guild is not None else None
-        view = MoreActionsView(self.bot, snapshot)
-        try:
-            if not interaction.response.is_done():
-                await interaction.response.send_message(
-                    "Choose an action.",
-                    view=view,
-                    ephemeral=True,
-                )
-                return
-        except discord.InteractionResponded:
-            pass
-        await interaction.followup.send("Choose an action.", view=view, ephemeral=True)
+        from weasel_bot_v2.services.control_center import ControlCenterService
+
+        await ControlCenterService(self.bot).open_more_actions(interaction)
 
     async def _try_edit_existing(
         self,

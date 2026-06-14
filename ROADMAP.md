@@ -19,17 +19,24 @@
 
 ### Phase 6.2 — Expérience d’utilisation
 
-* Petit message public compact lors d’un ajout, d’un skip ou d’un changement de piste. 🎵
-* Bouton permettant d’ouvrir un centre de contrôle éphémère complet, à la manière de Rythm. 🎛️
-* Panneau public principal plus léger et panneau personnel détaillé pour les actions avancées. 🧩
-* Réponses éphémères sobres, sans accumulation inutile. 🧹
+* Petit message public compact lors d’un ajout, d’un skip ou d’un changement de piste. ✅
+* Bouton permettant d’ouvrir un centre de contrôle éphémère complet, à la manière de Rythm. ✅
+* Panneau public principal plus léger et panneau personnel détaillé pour les actions avancées. ✅
+* Réponses éphémères sobres, sans accumulation inutile. ✅
 * Menu `⋯` pour queue, informations, même auteur, même catégorie, playlists et future radio. 📋
 
 ### Phase 6.3 — Présence dans le salon vocal
 
-* Mettre à jour le statut du salon vocal avec le morceau en cours. 🔊
-* Effacer le statut lorsque le bot stoppe ou quitte. 📴
+* Mettre à jour le statut du salon vocal avec le morceau en cours. ✅
+* Effacer le statut lorsque le bot stoppe ou quitte. ✅
 * Ajouter éventuellement durée, artiste ou état du player dans une version compacte. ⏱️
+
+### Phase 6.4 — Modération réversible des SuperDislikes
+
+* Quarantaine SQLite auditée pour les morceaux SuperDisliked. ✅
+* `/purge_superdisliked` en prévisualisation puis exécution administrative. ✅
+* `/quarantine_list` et `/restore_quarantined` pour rendre la modération réversible. ✅
+* Aucun effacement définitif des fichiers musicaux. ✅
 
 ## Phase 7 — Profils et préférences musicales
 

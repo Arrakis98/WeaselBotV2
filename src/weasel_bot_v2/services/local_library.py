@@ -92,7 +92,7 @@ class LocalLibraryService:
             return []
 
         matches: list[tuple[int, str, int, Track]] = []
-        for track in self.tracks.list_local():
+        for track in self.tracks.list_local(available_only=True):
             haystacks = _track_search_fields(track)
             best_score = _best_score(normalized_query, haystacks)
             if best_score is None:
@@ -106,7 +106,7 @@ class LocalLibraryService:
         return self.tracks.count_local()
 
     def list_indexed_mp3_tracks(self) -> list[Track]:
-        return select_mp3_tracks(self.tracks.list_local())
+        return select_mp3_tracks(self.tracks.list_local(available_only=True))
 
     def playback_path(self, track: Track) -> Path:
         if not track.relative_path:

@@ -24,6 +24,10 @@ The intended local stack is:
   ignored and outside Git.
 - Local music library mounted read-only at `/music` in both the bot and
   Lavalink containers.
+- Optional bot-only writable admin music view at `/library_admin/music` and
+  writable quarantine destination at
+  `/library_admin/quarantine/super_disliked` for reversible SuperDislike
+  moderation.
 
 Do not expose Lavalink publicly by default. The bot should reach Lavalink on the
 internal Docker network, and `compose.example.yml` must not publish Lavalink port
@@ -31,9 +35,12 @@ internal Docker network, and `compose.example.yml` must not publish Lavalink por
 communicate with Discord voice infrastructure.
 
 For local music playback, keep the bot and Lavalink mounts consistent. The
-public compose example uses `./music:/music:ro` as a safe placeholder. If your
-real host library lives elsewhere, put that host path only in a private ignored
-compose file and still mount it as `/music:ro` in both services.
+public compose example uses `${MUSIC_LIBRARY_HOST_PATH:-./music}:/music:ro` as a
+safe placeholder. If your real host library lives elsewhere, put that host path
+only in a private ignored `.env` or compose override and still mount it as
+`/music:ro` in both services. The bot-only moderation mounts should point to the
+same active library host path for `/library_admin/music:rw` and to a separate
+quarantine host path for `/library_admin/quarantine/super_disliked:rw`.
 
 ## Phase 1 Local Docker Stack
 
@@ -53,6 +60,9 @@ DISCORD_TEST_GUILD_ID=
 LAVALINK_PASSWORD=choose-a-local-password
 LAVALINK_HOST=lavalink
 LAVALINK_PORT=2333
+MUSIC_LIBRARY_HOST_PATH=./music
+QUARANTINE_HOST_PATH=./quarantine/super_disliked
+WEASEL_AUTO_QUARANTINE_SUPERDISLIKE=false
 ```
 
 Do not commit `.env`, `config.yaml`, `compose.yml`, Lavalink local overrides, data
@@ -134,6 +144,16 @@ current track playing.
 `/play_all` uses the SQLite index created by `/library_scan`; it does not scan the
 filesystem at command time. It currently queues indexed `.mp3` files only and
 intentionally ignores other indexed extensions.
+
+SuperDislike quarantine is reversible and disabled for automatic rating actions
+by default. Preview the administrative purge with
+`/purge_superdisliked execute:false`. Execution moves eligible indexed local
+tracks to the configured quarantine destination, marks them unavailable in
+SQLite, removes future queue occurrences, and records an audit row. It never
+deletes music files. Enable automatic SuperDislike quarantine only after a
+successful manual preview and test restore by setting
+`WEASEL_AUTO_QUARANTINE_SUPERDISLIKE=true` or the matching YAML setting in a
+private config.
 
 ## Troubleshooting
 

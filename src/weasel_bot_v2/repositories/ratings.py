@@ -58,6 +58,19 @@ class RatingRepository:
             superdislike=counts.get("superdislike", 0),
         )
 
+    def track_ids_for_rating(self, guild_id: int, rating: str) -> list[int]:
+        with self.database.connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT DISTINCT track_id
+                FROM ratings
+                WHERE guild_id = ? AND rating = ?
+                ORDER BY track_id
+                """,
+                (guild_id, rating),
+            ).fetchall()
+        return [int(row["track_id"]) for row in rows]
+
 
 def _rating_from_row(row: Row) -> Rating:
     return Rating(

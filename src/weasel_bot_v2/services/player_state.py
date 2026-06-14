@@ -108,6 +108,11 @@ class GuildPlayerState:
             return None
         return self.upcoming.pop(position - 1)
 
+    def remove_upcoming_track(self, track_id: int) -> int:
+        before = len(self.upcoming)
+        self.upcoming = [track for track in self.upcoming if track.id != track_id]
+        return before - len(self.upcoming)
+
     @property
     def queue_length(self) -> int:
         return len(self.upcoming)

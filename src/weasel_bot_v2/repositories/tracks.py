@@ -29,7 +29,8 @@ class TrackRepository:
                     indexed_at,
                     title,
                     artist,
-                    duration_ms
+                    duration_ms,
+                    is_available
                 FROM tracks
                 WHERE id = ?
                 """,
@@ -56,9 +57,10 @@ class TrackRepository:
                     indexed_at,
                     title,
                     artist,
-                    duration_ms
+                    duration_ms,
+                    is_available
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(source, source_id) DO UPDATE SET
                     relative_path = excluded.relative_path,
                     file_name = excluded.file_name,
@@ -71,7 +73,8 @@ class TrackRepository:
                     indexed_at = excluded.indexed_at,
                     title = excluded.title,
                     artist = excluded.artist,
-                    duration_ms = excluded.duration_ms
+                    duration_ms = excluded.duration_ms,
+                    is_available = excluded.is_available
                 RETURNING id
                 """,
                 (
@@ -89,6 +92,7 @@ class TrackRepository:
                     track.title,
                     track.artist,
                     track.duration_ms,
+                    int(track.is_available),
                 ),
             )
             row = cursor.fetchone()
@@ -120,7 +124,8 @@ class TrackRepository:
                     indexed_at,
                     title,
                     artist,
-                    duration_ms
+                    duration_ms,
+                    is_available
                 FROM tracks
                 WHERE source = 'local' AND relative_path = ?
                 """,
@@ -134,10 +139,21 @@ class TrackRepository:
             raise ValueError("Local tracks require source='local' and a relative path.")
         return self.upsert(track)
 
-    def list_local(self) -> list[Track]:
+    def set_available(self, track_id: int, available: bool) -> None:
+        with self.database.connect() as connection:
+            connection.execute(
+                "UPDATE tracks SET is_available = ? WHERE id = ?",
+                (int(available), track_id),
+            )
+            connection.commit()
+
+    def list_local(self, *, available_only: bool = False) -> list[Track]:
+        where = "WHERE source = 'local'"
+        if available_only:
+            where += " AND is_available = 1"
         with self.database.connect() as connection:
             rows = connection.execute(
-                """
+                f"""
                 SELECT
                     id,
                     source,
@@ -153,9 +169,10 @@ class TrackRepository:
                     indexed_at,
                     title,
                     artist,
-                    duration_ms
+                    duration_ms,
+                    is_available
                 FROM tracks
-                WHERE source = 'local'
+                {where}
                 ORDER BY relative_path COLLATE NOCASE, id
                 """
             ).fetchall()
@@ -165,7 +182,8 @@ class TrackRepository:
     def count_local(self) -> int:
         with self.database.connect() as connection:
             row = connection.execute(
-                "SELECT COUNT(*) AS track_count FROM tracks WHERE source = 'local'"
+                "SELECT COUNT(*) AS track_count FROM tracks WHERE source = 'local' "
+                "AND is_available = 1"
             ).fetchone()
 
         return int(row["track_count"]) if row else 0
@@ -188,4 +206,5 @@ def _track_from_row(row: Row) -> Track:
         title=row["title"],
         artist=row["artist"],
         duration_ms=row["duration_ms"],
+        is_available=bool(row["is_available"]),
     )

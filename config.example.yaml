@@ -10,6 +10,11 @@ paths:
   music_library: "/music"
   logs_dir: "logs"
 
+library_moderation:
+  admin_music_path: "/library_admin/music"
+  quarantine_path: "/library_admin/quarantine/super_disliked"
+  auto_quarantine_superdislike: false
+
 database:
   # Default local SQLite database path. Do not commit generated database files.
   path: "data/weasel.db"

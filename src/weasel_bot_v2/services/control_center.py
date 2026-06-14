@@ -12,7 +12,9 @@ from weasel_bot_v2.services.now_playing_panel import (
     NowPlayingPanelService,
     NowPlayingSnapshot,
     format_queue,
+    format_track_information,
     respond_ephemeral_update,
+    shuffle_upcoming_queue,
 )
 from weasel_bot_v2.services.player_actions import PlayerActionService
 from weasel_bot_v2.services.player_state import VOLUME_STEP
@@ -104,6 +106,14 @@ CONTROL_CENTER_SPECS: tuple[ControlCenterButtonSpec, ...] = (
         discord.ButtonStyle.secondary,
     ),
     ControlCenterButtonSpec(
+        "more",
+        "weasel:controls:more",
+        "More",
+        None,
+        1,
+        discord.ButtonStyle.secondary,
+    ),
+    ControlCenterButtonSpec(
         "like",
         "weasel:controls:like",
         "Like",
@@ -134,6 +144,58 @@ CONTROL_CENTER_SPECS: tuple[ControlCenterButtonSpec, ...] = (
         "💀",
         2,
         discord.ButtonStyle.danger,
+    ),
+)
+
+
+ADVANCED_ACTIONS: tuple[ControlCenterButtonSpec, ...] = (
+    ControlCenterButtonSpec(
+        "queue_details",
+        "weasel:controls:advanced:queue",
+        "Queue Details",
+        "📜",
+        0,
+        discord.ButtonStyle.secondary,
+    ),
+    ControlCenterButtonSpec(
+        "now_playing_details",
+        "weasel:controls:advanced:details",
+        "Now Playing Details",
+        "ℹ️",
+        0,
+        discord.ButtonStyle.secondary,
+    ),
+    ControlCenterButtonSpec(
+        "shuffle_queue",
+        "weasel:controls:advanced:shuffle",
+        "Shuffle Future Queue",
+        "🔀",
+        1,
+        discord.ButtonStyle.secondary,
+    ),
+    ControlCenterButtonSpec(
+        "clear_queue",
+        "weasel:controls:advanced:clear_queue",
+        "Clear Future Queue",
+        "🧹",
+        1,
+        discord.ButtonStyle.danger,
+    ),
+    ControlCenterButtonSpec(
+        "leave",
+        "weasel:controls:advanced:leave",
+        "Leave Voice",
+        "👋",
+        2,
+        discord.ButtonStyle.danger,
+    ),
+    ControlCenterButtonSpec(
+        "back_to_controls",
+        "weasel:controls:advanced:back",
+        "Back to Control Center",
+        "↩️",
+        2,
+        discord.ButtonStyle.primary,
     ),
 )
 
@@ -175,6 +237,14 @@ class ControlCenterService:
             if action_key == "queue":
                 state = self.bot.player_states.get(guild.id)
                 action_message = format_queue(state)
+            elif action_key == "more":
+                snapshot = panel.snapshot_for(guild)
+                await respond_ephemeral_update(
+                    interaction,
+                    format_advanced_actions(snapshot),
+                    view=AdvancedActionsView(self.bot, snapshot),
+                )
+                return
             else:
                 result = await self._run_mutating_action(guild, interaction, action_key)
                 action_message = result.message
@@ -190,6 +260,103 @@ class ControlCenterService:
             interaction,
             content,
             view=ControlCenterView(self.bot, snapshot),
+        )
+
+    async def show_more_actions(self, interaction: discord.Interaction) -> None:
+        guild = interaction.guild
+        if guild is None:
+            await respond_ephemeral_update(
+                interaction,
+                "This control can only be used in a server.",
+                view=None,
+            )
+            return
+        snapshot = self.snapshot_for(guild)
+        await respond_ephemeral_update(
+            interaction,
+            format_advanced_actions(snapshot),
+            view=AdvancedActionsView(self.bot, snapshot),
+        )
+
+    async def open_more_actions(self, interaction: discord.Interaction) -> None:
+        guild = interaction.guild
+        if guild is None:
+            await _send_initial_control_center(
+                interaction,
+                "This control can only be used in a server.",
+                view=None,
+            )
+            return
+        snapshot = self.snapshot_for(guild)
+        await _send_initial_control_center(
+            interaction,
+            format_advanced_actions(snapshot),
+            view=AdvancedActionsView(self.bot, snapshot),
+        )
+
+    async def run_advanced_action(
+        self,
+        interaction: discord.Interaction,
+        action_key: str,
+        *,
+        confirmed: bool = False,
+    ) -> None:
+        guild = interaction.guild
+        if guild is None:
+            await respond_ephemeral_update(
+                interaction,
+                "This control can only be used in a server.",
+                view=None,
+            )
+            return
+
+        panel = NowPlayingPanelService(self.bot)
+        async with panel.lock_for(guild.id):
+            snapshot = panel.snapshot_for(guild)
+            if action_key == "back_to_controls":
+                await respond_ephemeral_update(
+                    interaction,
+                    format_control_center(snapshot),
+                    view=ControlCenterView(self.bot, snapshot),
+                )
+                return
+            if action_key == "queue_details":
+                state = self.bot.player_states.get(guild.id)
+                await respond_ephemeral_update(
+                    interaction,
+                    format_queue(state),
+                    view=AdvancedActionsView(self.bot, snapshot),
+                )
+                return
+            if action_key == "now_playing_details":
+                await respond_ephemeral_update(
+                    interaction,
+                    format_track_information(snapshot),
+                    view=AdvancedActionsView(self.bot, snapshot),
+                )
+                return
+            if action_key in {"clear_queue", "leave"} and not confirmed:
+                await respond_ephemeral_update(
+                    interaction,
+                    confirmation_text(action_key),
+                    view=AdvancedConfirmationView(self.bot, action_key),
+                )
+                return
+
+            result = self._run_advanced_mutation(guild, action_key)
+            if inspect.isawaitable(result):
+                result = await result
+            await panel.refresh_locked(
+                guild=guild,
+                channel=cast(discord.abc.Messageable | None, interaction.channel),
+                reason=f"controls:advanced:{action_key}",
+            )
+            snapshot = panel.snapshot_for(guild)
+
+        await respond_ephemeral_update(
+            interaction,
+            format_advanced_actions(snapshot, notice=result.message),
+            view=AdvancedActionsView(self.bot, snapshot),
         )
 
     def snapshot_for(self, guild: discord.Guild) -> NowPlayingSnapshot:
@@ -237,6 +404,21 @@ class ControlCenterService:
         if inspect.isawaitable(result_or_awaitable):
             return await result_or_awaitable
         return result_or_awaitable
+
+    def _run_advanced_mutation(
+        self,
+        guild: discord.Guild,
+        action_key: str,
+    ) -> Awaitable[PlaybackResult] | PlaybackResult:
+        playback = AudioPlaybackService(self.bot, self.bot.settings.bot.music_library)
+        if action_key == "shuffle_queue":
+            state = self.bot.player_states.get(guild.id)
+            return shuffle_upcoming_queue(state)
+        if action_key == "clear_queue":
+            return playback.clear_queue(guild.id)
+        if action_key == "leave":
+            return playback.leave(guild)
+        return PlaybackResult(ok=False, message="That advanced action is not available.")
 
 
 class OpenControlPanelView(discord.ui.View):
@@ -297,6 +479,81 @@ class ControlCenterButton(discord.ui.Button[Any]):
         )
 
 
+class AdvancedActionsView(discord.ui.View):
+    def __init__(self, bot: Any, snapshot: NowPlayingSnapshot) -> None:
+        super().__init__(timeout=300)
+        self.bot = bot
+        for spec in ADVANCED_ACTIONS:
+            self.add_item(AdvancedActionButton(spec, snapshot))
+
+
+class AdvancedActionButton(discord.ui.Button[Any]):
+    def __init__(self, spec: ControlCenterButtonSpec, snapshot: NowPlayingSnapshot) -> None:
+        super().__init__(
+            label=spec.label,
+            emoji=spec.emoji,
+            custom_id=spec.custom_id,
+            row=spec.row,
+            style=spec.style,
+            disabled=_advanced_disabled(spec.key, snapshot),
+        )
+        self.spec = spec
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        await ControlCenterService(cast(Any, self.view).bot).run_advanced_action(
+            interaction,
+            self.spec.key,
+        )
+
+
+class AdvancedConfirmationView(discord.ui.View):
+    def __init__(self, bot: Any, action_key: str) -> None:
+        super().__init__(timeout=120)
+        self.bot = bot
+        self.action_key = action_key
+        self.add_item(AdvancedConfirmButton(action_key))
+        self.add_item(AdvancedCancelButton())
+
+
+class AdvancedConfirmButton(discord.ui.Button[Any]):
+    def __init__(self, action_key: str) -> None:
+        super().__init__(
+            label="Confirm",
+            custom_id=f"weasel:controls:advanced:{action_key}:confirm",
+            style=discord.ButtonStyle.danger,
+        )
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        view = cast(Any, self.view)
+        await ControlCenterService(view.bot).run_advanced_action(
+            interaction,
+            view.action_key,
+            confirmed=True,
+        )
+
+
+class AdvancedCancelButton(discord.ui.Button[Any]):
+    def __init__(self) -> None:
+        super().__init__(
+            label="Cancel",
+            custom_id="weasel:controls:advanced:cancel",
+            style=discord.ButtonStyle.secondary,
+        )
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        guild = interaction.guild
+        if guild is None:
+            await respond_ephemeral_update(interaction, "Cancelled.", view=None)
+            return
+        service = ControlCenterService(cast(Any, self.view).bot)
+        snapshot = service.snapshot_for(guild)
+        await respond_ephemeral_update(
+            interaction,
+            format_advanced_actions(snapshot, notice="Cancelled."),
+            view=AdvancedActionsView(service.bot, snapshot),
+        )
+
+
 def format_control_center(snapshot: NowPlayingSnapshot, *, notice: str | None = None) -> str:
     lines = [
         "### WEASEL GALAXY CONTROL CENTER",
@@ -320,6 +577,24 @@ def format_control_center(snapshot: NowPlayingSnapshot, *, notice: str | None = 
     return "\n".join(lines)
 
 
+def format_advanced_actions(snapshot: NowPlayingSnapshot, *, notice: str | None = None) -> str:
+    lines = [
+        "### WEASEL GALAXY",
+        "More Actions",
+        f"Current: {snapshot.track_display.title}",
+        f"Queue: {snapshot.queue_length} upcoming",
+    ]
+    if notice:
+        lines.extend(("", notice))
+    return "\n".join(lines)
+
+
+def confirmation_text(action_key: str) -> str:
+    if action_key == "leave":
+        return "Leave voice and reset the current playback session?"
+    return "Clear all future queued tracks? The current track will keep playing."
+
+
 def control_center_custom_ids() -> tuple[str, ...]:
     return tuple(spec.custom_id for spec in CONTROL_CENTER_SPECS) + (
         OPEN_CONTROL_PANEL_CUSTOM_ID,
@@ -327,13 +602,23 @@ def control_center_custom_ids() -> tuple[str, ...]:
 
 
 def _control_disabled(key: str, snapshot: NowPlayingSnapshot) -> bool:
-    if key == "queue":
+    if key in {"queue", "more"}:
         return False
     if not snapshot.has_track:
         return True
     if key == "previous":
         return not snapshot.previous_available
     return False
+
+
+def _advanced_disabled(key: str, snapshot: NowPlayingSnapshot) -> bool:
+    if key in {"back_to_controls"}:
+        return False
+    if key in {"queue_details", "now_playing_details"}:
+        return not snapshot.has_track and snapshot.queue_length == 0
+    if key in {"shuffle_queue", "clear_queue"}:
+        return snapshot.queue_length == 0
+    return not snapshot.has_track
 
 
 async def _send_initial_control_center(

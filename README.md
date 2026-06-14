@@ -113,11 +113,19 @@ Expected Discord slash commands after the bot logs in:
 - `/my_rating`
 - `/volume`
 - `/reset_track_volume`
+- `/controls`
+- `/purge_superdisliked`
+- `/quarantine_list`
+- `/restore_quarantined`
 
 The Now Playing panel also exposes active Like, SuperLike, Dislike, and
 SuperDislike buttons. Ratings are stored for later personalization work, but they
 do not drive recommendations yet. Queue state and ratings remain separate from
 volume settings.
+
+Dislike and SuperDislike save or replace the user's current-track rating before
+invoking the shared skip action exactly once. Like and SuperLike save the rating
+without skipping.
 
 Volume is per track. A local track can have a guild-specific preset changed with
 `/volume percent:<value>` while that track is playing, or with the Now Playing
@@ -137,6 +145,11 @@ effective volume, loop state, and rating counts. If the tracked message was
 deleted or is no longer accessible, the bot attempts to recreate it in the
 current interaction channel and update the stored reference.
 
+Phase 6 adds a personal ephemeral `/controls` center, a structured personal More
+Actions view, compact public playback activity acknowledgements with an
+`Open Control Panel` launcher, and best-effort Discord voice-channel status
+updates for the current track.
+
 `/stop` and `/leave` are hard session resets: they stop playback, suppress the
 manual-stop track-end auto-advance, clear the current track, queue, back history,
 paused state, and loop state, then disconnect from voice. `/clear_queue` only
@@ -155,6 +168,21 @@ No mascot GIF or spritesheet is integrated yet; optional artwork support remains
 a documented extension point for a later live-tested phase. If Components V2
 rendering fails, the bot falls back to the existing embed-based panel.
 
+SuperDislike library moderation is available as a reversible MVP. It is disabled
+for automatic rating actions by default. When enabled with
+`WEASEL_AUTO_QUARANTINE_SUPERDISLIKE=true` or
+`library_moderation.auto_quarantine_superdislike: true`, SuperDislike saves the
+rating, skips through the existing playback action, then moves the captured
+previous local file from the writable admin library mount to the configured
+quarantine mount. Administrative `/purge_superdisliked execute:false` previews
+eligible SuperDisliked local tracks without filesystem changes, and
+`execute:true` moves them instead of deleting them. `/quarantine_list` and
+`/restore_quarantined` provide the minimal reversible audit workflow. Discord
+output uses container-relative paths only and never host paths.
+
 Lavalink is only reachable on the internal Docker network by default. The example
-compose file mounts `./music` as read-only example storage and does not expose
-Lavalink ports publicly.
+compose file mounts the active music library read-only at `/music` for both bot
+and Lavalink. The bot also receives a least-privilege writable admin view at
+`/library_admin/music` plus a writable quarantine destination at
+`/library_admin/quarantine/super_disliked`; Lavalink does not receive those
+writable mounts.

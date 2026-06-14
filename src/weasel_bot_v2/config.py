@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -32,6 +32,13 @@ class BotConfig:
     data_dir: Path = Path("data")
     logs_dir: Path = Path("logs")
     music_library: Path = Path("music")
+
+
+@dataclass(frozen=True)
+class LibraryModerationConfig:
+    admin_music_path: Path = Path("/library_admin/music")
+    quarantine_path: Path = Path("/library_admin/quarantine/super_disliked")
+    auto_quarantine_superdislike: bool = False
 
 
 @dataclass(frozen=True)
@@ -84,6 +91,7 @@ class Settings:
     lavalink: LavalinkConfig
     database: DatabaseConfig
     features: FeatureFlags
+    library_moderation: LibraryModerationConfig = field(default_factory=LibraryModerationConfig)
 
     @classmethod
     def load(cls, cwd: Path | None = None, *, require_token: bool = True) -> Settings:
@@ -101,6 +109,7 @@ class Settings:
             lavalink=_load_lavalink_config(raw_config),
             database=_load_database_config(raw_config, base_dir),
             features=_load_feature_flags(raw_config),
+            library_moderation=_load_library_moderation_config(raw_config, base_dir),
         )
 
         if require_token and not settings.discord_token:
@@ -170,6 +179,30 @@ def _load_database_config(raw_config: dict[str, Any], base_dir: Path) -> Databas
     database = _mapping(raw_config.get("database"))
     return DatabaseConfig(
         path=_path_value(database.get("path"), base_dir / "data" / "weasel.db", base_dir)
+    )
+
+
+def _load_library_moderation_config(
+    raw_config: dict[str, Any],
+    base_dir: Path,
+) -> LibraryModerationConfig:
+    moderation = _mapping(raw_config.get("library_moderation"))
+    return LibraryModerationConfig(
+        admin_music_path=_path_value(
+            moderation.get("admin_music_path"),
+            Path("/library_admin/music"),
+            base_dir,
+        ),
+        quarantine_path=_path_value(
+            moderation.get("quarantine_path"),
+            Path("/library_admin/quarantine/super_disliked"),
+            base_dir,
+        ),
+        auto_quarantine_superdislike=_bool_value(
+            os.getenv("WEASEL_AUTO_QUARANTINE_SUPERDISLIKE")
+            or moderation.get("auto_quarantine_superdislike"),
+            False,
+        ),
     )
 
 
