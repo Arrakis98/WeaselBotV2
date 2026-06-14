@@ -95,6 +95,7 @@ Expected commands after Discord sync completes:
 - `/superdislike`
 - `/my_rating`
 - `/volume`
+- `/reset_track_volume`
 
 `/audio_status` only reports whether the Phase 1 Mafic/Lavalink connection appears
 available. It does not play music.
@@ -115,10 +116,20 @@ have enough time for Lavalink to resolve local files on slower disks.
 
 Phase 4 adds local queue navigation on top of the Phase 3.5 controls. Queue state
 is in memory per guild and is lost when the bot restarts. Phase 5 stores local
-track ratings and a per-guild volume preference in SQLite. Same-artist actions,
+track ratings and optional per-guild, per-track volume presets in SQLite.
+`/volume percent:<value>` and the Now Playing volume buttons save the current
+track's preset, and `/reset_track_volume` removes that preset so the current
+track uses 100% again. Tracks without presets always play at exactly 100%; the
+old `/default_volume` command is deprecated and no longer affects playback.
+Values above 100 are allowed but can clip already loud tracks; no automatic
+ReplayGain or loudness normalization is implemented yet. Same-artist actions,
 persisted playlists, web playback, and autoplay radio are planned for later
-phases. Loop stability, long pause behavior, and occasional panel sync issues
-remain intentionally deferred.
+phases. Loop stability and long pause behavior remain intentionally deferred.
+
+`/stop` and `/leave` reset the playback session, clear current/upcoming/back
+state, clear paused and loop state, suppress manual-stop auto-advance, and
+disconnect from voice. `/clear_queue` only clears upcoming tracks and leaves the
+current track playing.
 
 `/play_all` uses the SQLite index created by `/library_scan`; it does not scan the
 filesystem at command time. It currently queues indexed `.mp3` files only and

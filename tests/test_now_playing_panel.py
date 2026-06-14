@@ -10,11 +10,30 @@ import pytest
 from weasel_bot_v2.config import DatabaseConfig
 from weasel_bot_v2.database import SQLiteDatabase
 from weasel_bot_v2.models import Rating, Track, UserRecord
-from weasel_bot_v2.repositories import RatingRepository, TrackRepository, UserRepository
+from weasel_bot_v2.repositories import (
+    RatingRepository,
+    TrackRepository,
+    TrackVolumeOverrideRepository,
+    UserRepository,
+)
 from weasel_bot_v2.services.now_playing_panel import (
+    ComponentsV2PanelRenderer,
+    LegacyEmbedPanelRenderer,
     NowPlayingPanelRecord,
     NowPlayingPanelRegistry,
     NowPlayingPanelService,
+    PanelRenderMode,
+    build_components_v2_canary_view,
+    control_custom_ids,
+    control_emojis,
+    control_labels,
+    control_specs,
+    detect_components_v2_support,
+    detect_message_render_mode,
+    format_queue,
+    more_action_values,
+    select_panel_renderer,
+    shuffle_upcoming_queue,
 )
 from weasel_bot_v2.services.player_state import PlayerStateStore
 
@@ -59,6 +78,7 @@ def test_snapshot_reflects_queue_volume_loop_and_ratings(database: SQLiteDatabas
     state.loop_current = True
     UserRepository(database).upsert(UserRecord(user_id=42, display_name="Tester"))
     assert current.id is not None
+    TrackVolumeOverrideRepository(database).save(123, current.id, 75)
     RatingRepository(database).set_rating(
         Rating(guild_id=123, user_id=42, track_id=current.id, rating="superlike")
     )
@@ -67,14 +87,220 @@ def test_snapshot_reflects_queue_volume_loop_and_ratings(database: SQLiteDatabas
 
     assert snapshot.title == "current"
     assert snapshot.artist == "Artist"
+    assert snapshot.track_display.artist == "Artist"
     assert snapshot.category == "Rock"
+    assert snapshot.track_display.metadata_line == "Artist • Rock"
     assert snapshot.status == "Paused"
     assert snapshot.volume == 75
+    assert snapshot.volume_source_label == "track preset"
     assert snapshot.loop_enabled is True
     assert snapshot.queue_length == 1
     assert snapshot.next_title == "next"
     assert snapshot.previous_available is True
     assert snapshot.rating_counts.superlike == 1
+    assert snapshot.relative_path == "Rock/Artist/current.mp3"
+
+
+def test_idle_panel_snapshot_has_no_stale_track_or_queue(database: SQLiteDatabase) -> None:
+    bot = _FakeBot(database)
+    guild = _FakeGuild(guild_id=123)
+    state = bot.player_states.get_or_create(123)
+    state.clear_all()
+
+    snapshot = NowPlayingPanelService(bot).snapshot_for(guild)  # type: ignore[arg-type]
+    payload = ComponentsV2PanelRenderer().render(bot, snapshot)
+    rendered = str(payload.view.to_components())
+
+    assert snapshot.has_track is False
+    assert snapshot.title == "Nothing playing"
+    assert snapshot.status == "Idle"
+    assert snapshot.queue_length == 0
+    assert snapshot.next_title is None
+    assert snapshot.volume == 100
+    assert snapshot.volume_source_label == "default"
+    assert "Idle" in rendered
+    assert "0 queued" in rendered
+
+
+def test_snapshot_displays_track_volume_source(database: SQLiteDatabase) -> None:
+    bot = _FakeBot(database)
+    guild = _FakeGuild(guild_id=123)
+    current = _indexed_track(database, "Rock/Artist/current.mp3")
+    assert current.id is not None
+    TrackVolumeOverrideRepository(database).save(123, current.id, 120)
+    state = bot.player_states.get_or_create(123)
+    state.current_track = current
+    state.volume = 100
+
+    snapshot = NowPlayingPanelService(bot).snapshot_for(guild)  # type: ignore[arg-type]
+    payload = ComponentsV2PanelRenderer().render(bot, snapshot)
+
+    assert snapshot.volume == 120
+    assert snapshot.volume_source_label == "track preset"
+    assert "120%" in str(payload.view.to_components())
+    assert "track preset" in str(payload.view.to_components())
+
+
+def test_snapshot_uses_divers_artist_fallback_without_category_leak(
+    database: SQLiteDatabase,
+) -> None:
+    bot = _FakeBot(database)
+    guild = _FakeGuild(guild_id=123)
+    state = bot.player_states.get_or_create(123)
+    state.current_track = Track(
+        source="local",
+        source_id="Misc/song.mp3",
+        relative_path="Misc/song.mp3",
+        file_name="song.mp3",
+        display_title="song",
+        category_guess="Misc",
+    )
+
+    snapshot = NowPlayingPanelService(bot).snapshot_for(guild)  # type: ignore[arg-type]
+
+    assert snapshot.track_display.artist == "Divers"
+    assert snapshot.track_display.category == "Misc"
+    assert snapshot.track_display.metadata_line == "Divers • Misc"
+
+
+def test_components_v2_capability_detection() -> None:
+    support = detect_components_v2_support()
+
+    assert support.discord_version
+    assert support.supported is True
+    assert support.missing == ()
+
+
+def test_panel_renderer_selection_prefers_components_v2() -> None:
+    assert isinstance(select_panel_renderer(), ComponentsV2PanelRenderer)
+    assert isinstance(select_panel_renderer(prefer_components_v2=False), LegacyEmbedPanelRenderer)
+
+
+def test_components_v2_payload_has_no_public_raw_path(database: SQLiteDatabase) -> None:
+    bot = _FakeBot(database)
+    guild = _FakeGuild(guild_id=123)
+    bot.player_states.get_or_create(123).current_track = _indexed_track(
+        database,
+        "Rock/Artist/current.mp3",
+    )
+    snapshot = NowPlayingPanelService(bot).snapshot_for(guild)  # type: ignore[arg-type]
+
+    payload = ComponentsV2PanelRenderer().render(bot, snapshot)
+    rendered = str(payload.view.to_components())
+
+    assert payload.mode == PanelRenderMode.COMPONENTS_V2
+    assert "WEASEL GALAXY" in rendered
+    assert "current" in rendered
+    assert "Rock/Artist/current.mp3" not in rendered
+    assert "Lavalink" not in rendered
+
+
+def test_emoji_only_controls_and_stable_custom_ids() -> None:
+    ids = control_custom_ids()
+
+    assert "weasel:now_playing:queue" in ids
+    assert "weasel:now_playing:shuffle" in ids
+    assert "weasel:now_playing:more" in ids
+    assert len(ids) == len(set(ids))
+    labels = dict(zip((spec.key for spec in control_specs()), control_labels(), strict=True))
+    emojis = dict(zip((spec.key for spec in control_specs()), control_emojis(), strict=True))
+    assert labels["volume_down"] == "−"
+    assert emojis["volume_down"] == "🔉"
+    assert labels["volume_up"] == "+"
+    assert emojis["volume_up"] == "🔊"
+    assert labels["more"] == "⋯"
+    assert emojis["more"] is None
+
+
+def test_all_buttons_have_valid_identity_and_rows_respect_discord_limits() -> None:
+    specs = control_specs()
+    row_counts: dict[int, int] = {}
+    for spec in specs:
+        assert spec.custom_id
+        assert spec.label or spec.emoji
+        row_counts[spec.row] = row_counts.get(spec.row, 0) + 1
+
+    assert row_counts == {0: 5, 1: 5, 2: 4}
+    assert all(count <= 5 for count in row_counts.values())
+
+
+def test_declared_button_emojis_are_single_valid_emoji_fields() -> None:
+    invalid_fragments = ("+", "−", "⋯")
+    for emoji in control_emojis():
+        if emoji is None:
+            continue
+        assert all(fragment not in emoji for fragment in invalid_fragments)
+
+
+def test_renderers_use_compatible_distinct_view_classes(database: SQLiteDatabase) -> None:
+    bot = _FakeBot(database)
+    guild = _FakeGuild(guild_id=123)
+    bot.player_states.get_or_create(123).current_track = _indexed_track(database, "one.mp3")
+    snapshot = NowPlayingPanelService(bot).snapshot_for(guild)  # type: ignore[arg-type]
+
+    components = ComponentsV2PanelRenderer().render(bot, snapshot)
+    legacy = LegacyEmbedPanelRenderer().render(bot, snapshot)
+
+    assert isinstance(components.view, discord.ui.LayoutView)
+    assert not isinstance(components.view, discord.ui.View)
+    assert isinstance(legacy.view, discord.ui.View)
+    assert not isinstance(legacy.view, discord.ui.LayoutView)
+
+
+def test_minimal_components_v2_canary_serializes() -> None:
+    view = build_components_v2_canary_view()
+    rendered = view.to_components()
+
+    assert isinstance(view, discord.ui.LayoutView)
+    assert "WEASEL GALAXY" in str(rendered)
+    assert "weasel:now_playing:canary" in str(rendered)
+
+
+def test_more_actions_options_include_only_initial_functional_choices() -> None:
+    values = more_action_values()
+
+    assert values[:2] == ("show_queue", "track_info")
+    assert "same_artist_disabled" in values
+    assert "add_to_playlist_disabled" in values
+    assert "similar_radio_disabled" in values
+
+
+def test_queue_preview_truncates(database: SQLiteDatabase) -> None:
+    state = PlayerStateStore().get_or_create(123)
+    state.current_track = _indexed_track(database, "current.mp3")
+    state.upcoming.extend(_indexed_track(database, f"next-{index}.mp3") for index in range(12))
+
+    message = format_queue(state, limit=5)
+
+    assert "Upcoming (12):" in message
+    assert "next-0" in message
+    assert "next-5" not in message
+    assert "...and 7 more." in message
+
+
+def test_shuffle_preserves_current_and_changes_only_upcoming(database: SQLiteDatabase) -> None:
+    current = _indexed_track(database, "current.mp3")
+    first = _indexed_track(database, "first.mp3")
+    second = _indexed_track(database, "second.mp3")
+    state = PlayerStateStore().get_or_create(123)
+    state.current_track = current
+    state.upcoming = [first, second]
+
+    result = shuffle_upcoming_queue(state)
+
+    assert result.ok is True
+    assert state.current_track == current
+    assert set(state.upcoming) == {first, second}
+    assert state.upcoming != [first, second]
+
+
+def test_shuffle_empty_or_single_queue_behavior(database: SQLiteDatabase) -> None:
+    empty = PlayerStateStore().get_or_create(123)
+    single = PlayerStateStore().get_or_create(456)
+    single.upcoming.append(_indexed_track(database, "one.mp3"))
+
+    assert shuffle_upcoming_queue(empty).ok is False
+    assert shuffle_upcoming_queue(single).ok is False
 
 
 @pytest.mark.asyncio
@@ -92,8 +318,102 @@ async def test_refresh_creates_then_edits_authoritative_panel(database: SQLiteDa
     assert first is not None
     assert second is not None
     assert first.message_id == second.message_id
+    assert first.render_mode == PanelRenderMode.COMPONENTS_V2
     assert len(channel.sent_messages) == 1
     assert channel.sent_messages[0].edit_count == 1
+
+
+@pytest.mark.asyncio
+async def test_fresh_components_v2_panel_sends_only_layout_view(
+    database: SQLiteDatabase,
+) -> None:
+    bot = _FakeBot(database)
+    guild = _FakeGuild(guild_id=123)
+    channel = _FakeChannel(channel_id=10)
+    bot.player_states.get_or_create(123).current_track = _indexed_track(database, "one.mp3")
+
+    record = await NowPlayingPanelService(bot).refresh(
+        guild=guild,  # type: ignore[arg-type]
+        channel=channel,  # type: ignore[arg-type]
+        reason="fresh",
+    )
+
+    assert record is not None
+    assert record.render_mode == PanelRenderMode.COMPONENTS_V2
+    assert channel.send_kwargs == [{"view": channel.sent_messages[0].last_view}]
+    assert isinstance(channel.sent_messages[0].last_view, discord.ui.LayoutView)
+
+
+@pytest.mark.asyncio
+async def test_legacy_message_converts_to_components_v2_with_legacy_fields_cleared(
+    database: SQLiteDatabase,
+) -> None:
+    bot = _FakeBot(database)
+    guild = _FakeGuild(guild_id=123)
+    channel = _FakeChannel(channel_id=10)
+    bot.channels[10] = channel
+    state = bot.player_states.get_or_create(123)
+    state.current_track = _indexed_track(database, "one.mp3")
+    legacy_payload = LegacyEmbedPanelRenderer().render(
+        bot,
+        NowPlayingPanelService(bot).snapshot_for(guild),  # type: ignore[arg-type]
+    )
+    legacy = await channel.send(embed=legacy_payload.embed, view=legacy_payload.view)
+    bot.now_playing_panels.set(
+        NowPlayingPanelRecord(
+            guild_id=123,
+            channel_id=10,
+            message_id=legacy.id,
+            view=legacy_payload.view,
+            render_mode=PanelRenderMode.LEGACY_EMBED,
+        )
+    )
+
+    record = await NowPlayingPanelService(bot).refresh(
+        guild=guild,  # type: ignore[arg-type]
+        channel=channel,  # type: ignore[arg-type]
+        reason="convert",
+    )
+
+    assert record is not None
+    assert record.message_id == legacy.id
+    assert record.render_mode == PanelRenderMode.COMPONENTS_V2
+    assert legacy.edit_kwargs[-1]["content"] is None
+    assert legacy.edit_kwargs[-1]["embed"] is None
+    assert legacy.edit_kwargs[-1]["attachments"] == []
+    assert isinstance(legacy.edit_kwargs[-1]["view"], discord.ui.LayoutView)
+
+
+@pytest.mark.asyncio
+async def test_existing_components_v2_message_refreshes_with_layout_view(
+    database: SQLiteDatabase,
+) -> None:
+    bot = _FakeBot(database)
+    guild = _FakeGuild(guild_id=123)
+    channel = _FakeChannel(channel_id=10)
+    state = bot.player_states.get_or_create(123)
+    state.current_track = _indexed_track(database, "first.mp3")
+    service = NowPlayingPanelService(bot)
+    record = await service.refresh(
+        guild=guild,  # type: ignore[arg-type]
+        channel=channel,  # type: ignore[arg-type]
+        reason="create",
+    )
+    assert record is not None
+    state.current_track = _indexed_track(database, "second.mp3")
+
+    refreshed = await service.refresh(
+        guild=guild,  # type: ignore[arg-type]
+        channel=channel,  # type: ignore[arg-type]
+        reason="refresh",
+    )
+
+    assert refreshed is not None
+    message = channel.sent_messages[0]
+    assert message.edit_kwargs[-1]["content"] is None
+    assert message.edit_kwargs[-1]["embed"] is None
+    assert message.edit_kwargs[-1]["attachments"] == []
+    assert isinstance(message.edit_kwargs[-1]["view"], discord.ui.LayoutView)
 
 
 @pytest.mark.asyncio
@@ -135,6 +455,81 @@ async def test_refresh_does_not_create_duplicate_panels(database: SQLiteDatabase
 
 
 @pytest.mark.asyncio
+async def test_components_v2_failure_falls_back_to_legacy_embed(
+    database: SQLiteDatabase,
+) -> None:
+    bot = _FakeBot(database)
+    guild = _FakeGuild(guild_id=123)
+    channel = _FakeChannel(channel_id=10)
+    channel.fail_components_v2 = True
+    bot.player_states.get_or_create(123).current_track = _indexed_track(database, "one.mp3")
+
+    record = await NowPlayingPanelService(bot).refresh(
+        guild=guild,  # type: ignore[arg-type]
+        channel=channel,  # type: ignore[arg-type]
+        reason="fallback",
+    )
+
+    assert record is not None
+    assert channel.sent_messages[0].last_embed is not None
+    assert channel.sent_messages[0].last_view is not None
+    assert record.render_mode == PanelRenderMode.LEGACY_EMBED
+    assert bot.player_states.get_or_create(123).current_track is not None
+
+
+@pytest.mark.asyncio
+async def test_components_v2_edit_failure_recreates_new_legacy_message(
+    database: SQLiteDatabase,
+) -> None:
+    bot = _FakeBot(database)
+    guild = _FakeGuild(guild_id=123)
+    channel = _FakeChannel(channel_id=10)
+    state = bot.player_states.get_or_create(123)
+    state.current_track = _indexed_track(database, "first.mp3")
+    service = NowPlayingPanelService(bot)
+    original = await service.refresh(
+        guild=guild,  # type: ignore[arg-type]
+        channel=channel,  # type: ignore[arg-type]
+        reason="create",
+    )
+    assert original is not None
+    channel.fail_components_v2_edit = True
+
+    fallback = await service.refresh(
+        guild=guild,  # type: ignore[arg-type]
+        channel=channel,  # type: ignore[arg-type]
+        reason="fallback",
+    )
+
+    assert fallback is not None
+    assert fallback.message_id != original.message_id
+    assert fallback.render_mode == PanelRenderMode.LEGACY_EMBED
+    assert channel.sent_messages[0].deleted is True
+    assert channel.sent_messages[1].last_embed is not None
+    assert bot.now_playing_panels.get(123) == fallback
+    assert state.current_track is not None
+
+
+@pytest.mark.asyncio
+async def test_no_panel_state_always_attempts_message_creation(
+    database: SQLiteDatabase,
+) -> None:
+    bot = _FakeBot(database)
+    guild = _FakeGuild(guild_id=123)
+    channel = _FakeChannel(channel_id=10)
+    bot.player_states.get_or_create(123).current_track = _indexed_track(database, "one.mp3")
+
+    record = await NowPlayingPanelService(bot).refresh(
+        guild=guild,  # type: ignore[arg-type]
+        channel=channel,  # type: ignore[arg-type]
+        reason="no-panel",
+    )
+
+    assert record is not None
+    assert len(channel.send_kwargs) == 1
+
+
+@pytest.mark.asyncio
 async def test_refresh_uses_newest_state(database: SQLiteDatabase) -> None:
     bot = _FakeBot(database)
     guild = _FakeGuild(guild_id=123)
@@ -146,12 +541,45 @@ async def test_refresh_uses_newest_state(database: SQLiteDatabase) -> None:
 
     state.current_track = _indexed_track(database, "second.mp3")
     state.volume = 55
+    assert state.current_track.id is not None
+    TrackVolumeOverrideRepository(database).save(123, state.current_track.id, 55)
     await service.refresh(guild=guild, channel=channel, reason="second")  # type: ignore[arg-type]
 
-    embed = channel.sent_messages[0].last_embed
-    assert embed is not None
-    assert "second" in (embed.description or "")
-    assert _field_value(embed, "Volume") == "55%"
+    view = channel.sent_messages[0].last_view
+    assert view is not None
+    rendered = str(view.to_components())
+    assert "second" in rendered
+    assert "55%" in rendered
+
+
+def test_renderer_type_detection() -> None:
+    legacy_record = NowPlayingPanelRecord(
+        guild_id=123,
+        channel_id=10,
+        message_id=100,
+        view=discord.ui.View(),
+        render_mode=PanelRenderMode.LEGACY_EMBED,
+    )
+    v2_record = NowPlayingPanelRecord(
+        guild_id=123,
+        channel_id=10,
+        message_id=101,
+        view=discord.ui.LayoutView(),
+        render_mode=PanelRenderMode.COMPONENTS_V2,
+    )
+
+    assert (
+        detect_message_render_mode(_BareMessage(components_v2=False), legacy_record)
+        is PanelRenderMode.LEGACY_EMBED
+    )
+    assert (
+        detect_message_render_mode(_BareMessage(components_v2=True), legacy_record)
+        is PanelRenderMode.COMPONENTS_V2
+    )
+    assert (
+        detect_message_render_mode(_BareMessage(components_v2=False), v2_record)
+        is PanelRenderMode.COMPONENTS_V2
+    )
 
 
 def _indexed_track(database: SQLiteDatabase, relative_path: str) -> Track:
@@ -199,10 +627,22 @@ class _FakeChannel:
     def __init__(self, channel_id: int) -> None:
         self.id = channel_id
         self.sent_messages: list[_FakeMessage] = []
+        self.send_kwargs: list[dict[str, Any]] = []
         self.deleted_message_ids: set[int] = set()
         self.next_message_id = 100
+        self.fail_components_v2 = False
+        self.fail_components_v2_edit = False
 
-    async def send(self, *, embed: discord.Embed, view: discord.ui.View) -> _FakeMessage:
+    async def send(
+        self,
+        *,
+        embed: discord.Embed | None = None,
+        view: Any,
+    ) -> _FakeMessage:
+        if embed is None and self.fail_components_v2:
+            raise TypeError("components v2 rejected")
+        kwargs = {"view": view} if embed is None else {"embed": embed, "view": view}
+        self.send_kwargs.append(kwargs)
         while self.next_message_id in self.deleted_message_ids:
             self.next_message_id += 1
         message = _FakeMessage(
@@ -230,19 +670,39 @@ class _FakeMessage:
         *,
         message_id: int,
         channel: _FakeChannel,
-        embed: discord.Embed,
-        view: discord.ui.View,
+        embed: discord.Embed | None,
+        view: Any,
     ) -> None:
         self.id = message_id
         self.channel = channel
         self.last_embed = embed
         self.last_view = view
         self.edit_count = 0
+        self.edit_kwargs: list[dict[str, Any]] = []
+        self.deleted = False
+        self.flags = SimpleNamespace(components_v2=isinstance(view, discord.ui.LayoutView))
 
-    async def edit(self, *, embed: discord.Embed | None = None, view: discord.ui.View) -> None:
+    async def edit(self, **kwargs: Any) -> None:
+        view = kwargs.get("view")
+        embed = kwargs.get("embed")
+        if isinstance(view, discord.ui.LayoutView) and self.channel.fail_components_v2_edit:
+            raise TypeError("components v2 rejected")
+        if embed is None and self.channel.fail_components_v2:
+            raise TypeError("components v2 rejected")
         self.edit_count += 1
+        self.edit_kwargs.append(kwargs)
         self.last_embed = embed
         self.last_view = view
+        self.flags = SimpleNamespace(components_v2=isinstance(view, discord.ui.LayoutView))
+
+    async def delete(self) -> None:
+        self.deleted = True
+        self.channel.deleted_message_ids.add(self.id)
+
+
+class _BareMessage:
+    def __init__(self, *, components_v2: bool) -> None:
+        self.flags = SimpleNamespace(components_v2=components_v2)
 
 
 def _not_found_response() -> Any:

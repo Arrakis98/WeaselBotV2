@@ -8,14 +8,11 @@ from typing import Any, cast
 import aiohttp
 import discord
 
-from weasel_bot_v2.models import GuildSettings, Track
-from weasel_bot_v2.repositories import GuildSettingsRepository
+from weasel_bot_v2.models import Track
+from weasel_bot_v2.repositories import GuildSettingsRepository, TrackVolumeOverrideRepository
 from weasel_bot_v2.services.local_library import safe_relative_path
-from weasel_bot_v2.services.player_state import (
-    DEFAULT_VOLUME,
-    GuildPlayerState,
-    clamp_volume,
-)
+from weasel_bot_v2.services.player_state import GuildPlayerState
+from weasel_bot_v2.services.volume import ResolvedVolume, VolumeService
 
 LOGGER = logging.getLogger(__name__)
 
@@ -129,7 +126,8 @@ class AudioPlaybackService:
             )
             LOGGER.info("Starting player.play for local relative_path=%s.", relative.as_posix())
             state = self.bot.player_states.get_or_create(guild.id)
-            state.set_volume(self._load_saved_volume(guild.id))
+            resolved_volume = self._volume_service().resolve(guild.id, track)
+            state.set_volume(resolved_volume.volume)
             await cast(Any, player).play(lavalink_track)
             await self._apply_volume(player, state.volume)
             state.set_current_track(track)
@@ -208,43 +206,30 @@ class AudioPlaybackService:
         return PlaybackResult(ok=True, message="Resumed.")
 
     async def stop(self, guild: discord.Guild) -> PlaybackResult:
-        state = self._active_state(guild)
-        if state is None:
-            return PlaybackResult(ok=False, message="Nothing is playing.")
-
-        player = self._active_player(guild)
-        if player is None or not hasattr(player, "stop"):
-            return PlaybackResult(ok=False, message="The bot is not connected to a player.")
-
-        try:
-            await cast(Any, player).stop()
-        except Exception as exc:  # noqa: BLE001 - controls should report clean failures.
-            return PlaybackResult(
-                ok=False,
-                message=f"Could not stop playback: {exc.__class__.__name__}.",
-            )
-
-        state.clear_current_track()
-        return PlaybackResult(ok=True, message="Stopped.")
+        return await self.hard_stop(guild)
 
     async def leave(self, guild: discord.Guild) -> PlaybackResult:
+        return await self.hard_stop(guild)
+
+    async def hard_stop(self, guild: discord.Guild) -> PlaybackResult:
+        state = self.bot.player_states.get_or_create(guild.id)
+        state.mark_manual_stop()
         player = self._active_player(guild)
-        if player is None or not hasattr(player, "disconnect"):
-            self.bot.player_states.clear(guild.id)
-            return PlaybackResult(ok=False, message="The bot is not connected to voice.")
 
         try:
-            if hasattr(player, "stop"):
+            if player is not None and hasattr(player, "stop"):
                 await cast(Any, player).stop()
-            await cast(Any, player).disconnect()
+            state.clear_all()
+            if player is not None and hasattr(player, "disconnect"):
+                await cast(Any, player).disconnect()
         except Exception as exc:  # noqa: BLE001 - controls should report clean failures.
+            state.clear_all()
             return PlaybackResult(
                 ok=False,
-                message=f"Could not leave voice: {exc.__class__.__name__}.",
+                message=f"Playback reset but disconnect failed: {exc.__class__.__name__}.",
             )
 
-        self.bot.player_states.clear(guild.id)
-        return PlaybackResult(ok=True, message="Left voice.")
+        return PlaybackResult(ok=True, message="Playback stopped. Queue cleared. Disconnected.")
 
     async def skip(self, guild: discord.Guild) -> PlaybackResult:
         state = self._active_state(guild)
@@ -311,6 +296,8 @@ class AudioPlaybackService:
             return
 
         state = self.bot.player_states.get(guild.id)
+        if state is not None and state.consume_manual_stop():
+            return
         if state is None or state.current_track is None:
             return
 
@@ -328,41 +315,104 @@ class AudioPlaybackService:
 
     async def change_volume(self, guild: discord.Guild, delta: int) -> PlaybackResult:
         state = self.bot.player_states.get_or_create(guild.id)
-        if not state.has_track:
-            state.set_volume(self._load_saved_volume(guild.id))
-
-        volume = state.change_volume(delta)
-        self._save_guild_volume(guild.id, volume)
-        player = self._active_player(guild)
-        if player is None or not hasattr(player, "set_volume"):
-            return PlaybackResult(ok=True, message=f"Volume saved: {volume}%")
-
-        try:
-            await self._apply_volume(player, volume)
-        except Exception as exc:  # noqa: BLE001 - controls should report clean failures.
+        if state.current_track is None:
             return PlaybackResult(
                 ok=False,
-                message=f"Could not change volume: {exc.__class__.__name__}.",
+                message="No current track. Volume is configured per track while it is playing.",
             )
 
-        return PlaybackResult(ok=True, message=f"Volume saved: {volume}%")
+        resolved = self._volume_service().resolve(guild.id, state.current_track)
+        return await self.set_current_track_volume(guild, resolved.volume + delta)
 
     async def set_volume(self, guild: discord.Guild, volume: int) -> PlaybackResult:
+        return await self.set_current_track_volume(guild, volume)
+
+    async def set_current_track_volume(
+        self,
+        guild: discord.Guild,
+        volume: int,
+    ) -> PlaybackResult:
         state = self.bot.player_states.get_or_create(guild.id)
-        saved_volume = self._save_guild_volume(guild.id, volume)
-        state.set_volume(saved_volume)
+        track = state.current_track
+        if track is None:
+            return PlaybackResult(
+                ok=False,
+                message="No current track. Volume is configured per track while it is playing.",
+            )
+        if track.id is None:
+            return PlaybackResult(
+                ok=False,
+                message="This track is not indexed, so a track volume preset cannot be saved.",
+            )
+
+        saved = self._volume_service().set_track_override(guild.id, track.id, volume)
+        state.set_volume(saved.volume)
 
         player = self._active_player(guild)
         if player is not None and hasattr(player, "set_volume"):
             try:
-                await self._apply_volume(player, saved_volume)
+                await self._apply_volume(player, saved.volume)
             except Exception as exc:  # noqa: BLE001 - controls should report clean failures.
                 return PlaybackResult(
                     ok=False,
-                    message=f"Volume saved but could not apply now: {exc.__class__.__name__}.",
+                    message=(
+                        "Track volume saved but could not apply now: "
+                        f"{exc.__class__.__name__}."
+                    ),
                 )
 
-        return PlaybackResult(ok=True, message=f"Volume saved: {saved_volume}%")
+        return PlaybackResult(ok=True, message=self._track_volume_message(saved.volume))
+
+    async def set_default_volume(self, guild: discord.Guild, volume: int) -> PlaybackResult:
+        return PlaybackResult(
+            ok=False,
+            message=(
+                "Default volume is deprecated. Volume is configured per track with "
+                "/volume while a track is playing."
+            ),
+        )
+
+    async def reset_current_track_volume(self, guild: discord.Guild) -> PlaybackResult:
+        state = self.bot.player_states.get_or_create(guild.id)
+        track = state.current_track
+        if track is None:
+            return PlaybackResult(ok=False, message="Nothing is playing.")
+        if track.id is None:
+            return PlaybackResult(
+                ok=False,
+                message="This track is not indexed, so it has no saved track volume preset.",
+            )
+
+        self._volume_service().remove_track_override(guild.id, track.id)
+        resolved = self._volume_service().resolve(guild.id, track)
+        state.set_volume(resolved.volume)
+
+        player = self._active_player(guild)
+        if player is not None and hasattr(player, "set_volume"):
+            try:
+                await self._apply_volume(player, resolved.volume)
+            except Exception as exc:  # noqa: BLE001 - controls should report clean failures.
+                return PlaybackResult(
+                    ok=False,
+                    message=(
+                        "Track volume reset but could not apply now: "
+                        f"{exc.__class__.__name__}."
+                    ),
+                )
+
+        return PlaybackResult(
+            ok=True,
+            message=f"Track volume reset to default: {resolved.volume}%",
+        )
+
+    def current_volume_status(self, guild_id: int) -> str:
+        state = self.bot.player_states.get(guild_id)
+        track = state.current_track if state is not None else None
+        resolved = self._volume_service().resolve(guild_id, track)
+        if track is None:
+            return "No current track. Volume is configured per track while it is playing."
+
+        return f"Current track volume: {resolved.volume}% ({resolved.source_label})."
 
     def toggle_loop(self, guild_id: int) -> PlaybackResult:
         state = self.bot.player_states.get(guild_id)
@@ -414,25 +464,21 @@ class AudioPlaybackService:
         if hasattr(player, "set_volume"):
             await cast(Any, player).set_volume(volume)
 
-    def _load_saved_volume(self, guild_id: int) -> int:
-        settings = GuildSettingsRepository(self.bot.database).ensure(guild_id)
-        volume = settings.default_volume
-        return clamp_volume(DEFAULT_VOLUME if volume is None else volume)
-
-    def _save_guild_volume(self, guild_id: int, volume: int) -> int:
-        repository = GuildSettingsRepository(self.bot.database)
-        settings = repository.ensure(guild_id)
-        clamped = clamp_volume(volume)
-        repository.save(
-            GuildSettings(
-                guild_id=settings.guild_id,
-                command_prefix=settings.command_prefix,
-                locale=settings.locale,
-                dj_role_id=settings.dj_role_id,
-                default_volume=clamped,
-            )
+    def _volume_service(self) -> VolumeService:
+        return VolumeService(
+            GuildSettingsRepository(self.bot.database),
+            TrackVolumeOverrideRepository(self.bot.database),
         )
-        return clamped
+
+    def resolve_effective_volume(self, guild_id: int, track: Track | None) -> ResolvedVolume:
+        return self._volume_service().resolve(guild_id, track)
+
+    def _track_volume_message(self, volume: int) -> str:
+        message = f"Track volume saved: {volume}%"
+        if volume > 100:
+            LOGGER.warning("Track volume above 100 may clip loud tracks: volume=%s", volume)
+            return f"{message}. Amplification above 100% may clip loud tracks."
+        return message
 
 
 def build_lavalink_local_identifier(*, music_root: Path, relative_path: str) -> str:

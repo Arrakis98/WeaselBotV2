@@ -19,6 +19,7 @@ class GuildPlayerState:
     paused: bool = False
     volume: int = DEFAULT_VOLUME
     loop_current: bool = False
+    suppress_next_track_end: bool = False
 
     @property
     def has_track(self) -> bool:
@@ -39,6 +40,14 @@ class GuildPlayerState:
         self.clear_current_track()
         self.upcoming.clear()
         self.recently_played.clear()
+
+    def mark_manual_stop(self) -> None:
+        self.suppress_next_track_end = True
+
+    def consume_manual_stop(self) -> bool:
+        suppressed = self.suppress_next_track_end
+        self.suppress_next_track_end = False
+        return suppressed
 
     def enqueue(self, track: Track) -> int:
         self.upcoming.append(track)

@@ -67,6 +67,17 @@ SCHEMA_STATEMENTS = (
     )
     """,
     """
+    CREATE TABLE IF NOT EXISTS track_volume_overrides (
+        guild_id INTEGER NOT NULL,
+        track_id INTEGER NOT NULL,
+        volume INTEGER NOT NULL,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (guild_id, track_id),
+        FOREIGN KEY (track_id) REFERENCES tracks (id) ON DELETE CASCADE
+    )
+    """,
+    """
     CREATE TABLE IF NOT EXISTS playlists (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         guild_id INTEGER,
@@ -109,4 +120,15 @@ SCHEMA_MIGRATIONS = (
     "source, display_title, artist_guess, category_guess, file_name, relative_path"
     ")",
     "ALTER TABLE guild_settings ADD COLUMN default_volume INTEGER NOT NULL DEFAULT 100",
+    """
+    CREATE TABLE IF NOT EXISTS track_volume_overrides (
+        guild_id INTEGER NOT NULL,
+        track_id INTEGER NOT NULL,
+        volume INTEGER NOT NULL,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (guild_id, track_id),
+        FOREIGN KEY (track_id) REFERENCES tracks (id) ON DELETE CASCADE
+    )
+    """,
 )

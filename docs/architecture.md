@@ -42,6 +42,7 @@ Initial schema bootstrap creates:
 - `tracks`
 - `play_history`
 - `ratings`
+- `track_volume_overrides`
 - `playlists`
 - `playlist_items`
 
@@ -116,12 +117,26 @@ setting a different rating replaces the previous one. Ratings are
 persisted in SQLite for future personalization, but recommendation logic is not
 implemented yet.
 
-Phase 5.1 stores a per-guild default volume in `guild_settings`. Volume is
-clamped from 0 to 200, defaults to 100 when unset, is applied when local playback
-starts, and is saved whenever `/volume` or the Now Playing volume buttons change
-it. This preference is independent from the in-memory queue and from user
-ratings. Loop stability, long pause behavior, and occasional panel sync issues
-remain intentionally deferred.
+Phase 5.1 added a per-guild default volume column in `guild_settings`, but
+playback no longer uses that value. Phase 5.4 uses `track_volume_overrides` for
+optional per-guild, per-local-track presets. Volume is clamped from 0 to 200 and
+resolves in this order: a track override for `guild_id + track_id`, otherwise
+exactly 100. The override is not stored on the global `tracks` row because the
+same track can need different presets in different guilds.
+
+When a local track starts through direct playback, queue advance, skip, back, or
+loop replay, the audio service resolves that track's effective volume and
+applies it through the existing Mafic/Lavalink `set_volume` path. Track changes
+must not carry the previous track's override into the next track. `/volume
+percent:<value>` and the Now Playing volume buttons save a preset for the
+currently playing local track. `/reset_track_volume` removes the current track
+preset and reapplies 100. `/default_volume` is deprecated because configurable
+guild fallback volume conflicts with the per-track-only design; the old
+`guild_settings.default_volume` column remains for backward-compatible schema
+safety only. Values above 100 are allowed with a clipping warning, but automatic
+ReplayGain or loudness normalization is not implemented yet. Loop stability,
+long pause behavior, and occasional panel sync issues remain intentionally
+deferred.
 
 Phase 5.2 moves the Discord Now Playing panel behind an in-memory authoritative
 panel registry. Each guild has at most one active tracked panel record containing
@@ -133,7 +148,7 @@ simultaneous interactions.
 
 Panel rendering is centralized in `NowPlayingPanelService`. A refresh builds a
 new snapshot from the current source of truth: active track metadata, paused
-state, volume, loop state, queue length, next track preview, previous-track
+state, effective volume and source, loop state, queue length, next track preview, previous-track
 availability, rating totals, Lavalink availability, and voice connection state.
 The service edits the tracked Discord message whenever possible. If that message
 was deleted, expired, or cannot be fetched, the service clears the old reference
@@ -147,6 +162,39 @@ running. The project does not yet register persistent views on startup, so panel
 button persistence across a full bot restart is not guaranteed. Loop behavior is
 still marked experimental, and the known long-pause and loop instability issues
 remain deferred outside Phase 5.2.
+
+Phase 5.3B adds a renderer layer to the same authoritative panel service. The
+primary renderer uses Discord Components V2 through `discord.ui.LayoutView`,
+`Container`, `TextDisplay`, `Separator`, `ActionRow`, `Button`, and `Select`
+when those APIs are available in the installed `discord.py`. The legacy embed
+renderer remains available. If Components V2 creation or editing fails, the
+service logs safe guild/channel/message/error-class diagnostics and retries with
+the legacy embed renderer without interrupting playback.
+
+The Components V2 panel uses the Weasel Galaxy identity: English UI text,
+`#C026D3` accent color, compact cosmic styling, and emoji-only player controls.
+It shows public playback metadata only: title, artist, optional category, state,
+effective volume with a concise `track preset` or `default` source label, queue
+size, next track preview, rating totals, and subtle experimental loop state.
+Unknown artists display as `Divers`. Raw relative paths, host paths, Lavalink
+status, and other diagnostics are not shown on the main panel.
+
+The second row adds private queue, shuffle, and more-actions controls. Queue
+opens an ephemeral preview. Shuffle randomizes only the existing upcoming queue
+and preserves the current track. More Actions opens an ephemeral select menu for
+Show queue and Track information, with future items clearly marked as not
+implemented. Optional thumbnail/mascot artwork is represented as a nullable
+service hook only; no GIF or spritesheet asset is integrated in this phase.
+
+`/stop` and `/leave` are hard playback-session resets. They request Lavalink
+stop, suppress the resulting manual track-end auto-advance, clear current track,
+upcoming queue, back history, paused state, and loop state, then disconnect from
+voice. Ratings and track-volume presets remain persisted. `/clear_queue` only
+clears upcoming tracks and preserves the current playback session. When
+`/play_all` is invoked while idle or disconnected, stale in-memory session state
+is cleared before one shuffled track starts and the rest are queued; when a
+track is actively playing in voice, `/play_all` keeps the existing append
+behavior.
 
 ### Playlist Service
 

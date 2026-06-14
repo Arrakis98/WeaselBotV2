@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from weasel_bot_v2.cogs.music import format_queue
+from types import SimpleNamespace
+
+from weasel_bot_v2.cogs.music import format_queue, prepare_play_all_session
 from weasel_bot_v2.models import Track
 from weasel_bot_v2.services.player_state import (
     DEFAULT_VOLUME,
@@ -206,6 +208,54 @@ def test_clear_queue_returns_removed_count() -> None:
 
     assert state.clear_queue() == 2
     assert state.upcoming == []
+
+
+def test_play_all_idle_state_clears_stale_queue_before_starting_fresh() -> None:
+    state = GuildPlayerState(
+        guild_id=123,
+        upcoming=[_track("stale-one.mp3"), _track("stale-two.mp3")],
+        recently_played=[_track("previous.mp3")],
+        paused=True,
+        loop_current=True,
+    )
+    guild = SimpleNamespace(voice_client=None)
+
+    should_append = prepare_play_all_session(state, guild)
+
+    assert should_append is False
+    assert state.current_track is None
+    assert state.upcoming == []
+    assert state.recently_played == []
+    assert state.paused is False
+    assert state.loop_current is False
+
+
+def test_play_all_disconnected_state_clears_stale_current_track() -> None:
+    state = GuildPlayerState(
+        guild_id=123,
+        current_track=_track("stale-current.mp3"),
+        upcoming=[_track("stale-next.mp3")],
+    )
+    guild = SimpleNamespace(voice_client=None)
+
+    should_append = prepare_play_all_session(state, guild)
+
+    assert should_append is False
+    assert state.current_track is None
+    assert state.upcoming == []
+
+
+def test_play_all_active_state_appends_without_clearing() -> None:
+    current = _track("current.mp3")
+    next_track = _track("next.mp3")
+    state = GuildPlayerState(guild_id=123, current_track=current, upcoming=[next_track])
+    guild = SimpleNamespace(voice_client=object())
+
+    should_append = prepare_play_all_session(state, guild)
+
+    assert should_append is True
+    assert state.current_track is current
+    assert state.upcoming == [next_track]
 
 
 def test_remove_queue_item_by_position() -> None:

@@ -9,19 +9,18 @@ from discord.ext import commands
 
 from weasel_bot_v2.bot import WeaselBot
 from weasel_bot_v2.repositories import (
-    GuildSettingsRepository,
     RatingRepository,
     TrackRepository,
     UserRepository,
 )
 from weasel_bot_v2.services.audio import AudioPlaybackService
-from weasel_bot_v2.services.guild_settings import GuildSettingsService
 from weasel_bot_v2.services.local_library import LocalLibraryService
 from weasel_bot_v2.services.now_playing_panel import (
     NowPlayingPanelService,
     format_queue,
     track_title,
 )
+from weasel_bot_v2.services.player_state import GuildPlayerState
 from weasel_bot_v2.services.ratings import RatingService
 
 
@@ -147,7 +146,7 @@ class MusicCog(commands.Cog):
         panel = NowPlayingPanelService(self.bot)
         async with panel.lock_for(guild.id):
             state = self.bot.player_states.get_or_create(guild.id)
-            if state.has_track:
+            if prepare_play_all_session(state, guild):
                 start_position, queued_count = state.enqueue_many(tracks)
                 await panel.refresh_locked(
                     guild=guild,
@@ -217,25 +216,67 @@ class MusicCog(commands.Cog):
             return
 
         if percent is None:
-            state = self.bot.player_states.get(guild.id)
-            volume = (
-                state.volume
-                if state is not None
-                else GuildSettingsService(GuildSettingsRepository(self.bot.database)).get_volume(
-                    guild.id
-                )
-            )
-            await interaction.response.send_message(f"Volume: {volume}%", ephemeral=True)
+            message = self._playback_service().current_volume_status(guild.id)
+            await interaction.response.send_message(message, ephemeral=True)
             return
 
         panel = NowPlayingPanelService(self.bot)
         async with panel.lock_for(guild.id):
-            result = await self._playback_service().set_volume(guild, percent)
-            await panel.refresh_locked(
-                guild=guild,
-                channel=cast(discord.abc.Messageable | None, interaction.channel),
-                reason="volume",
+            result = await self._playback_service().set_current_track_volume(guild, percent)
+            if result.ok:
+                await panel.refresh_locked(
+                    guild=guild,
+                    channel=cast(discord.abc.Messageable | None, interaction.channel),
+                    reason="volume",
+                )
+        await interaction.response.send_message(result.message, ephemeral=True)
+
+    @app_commands.command(
+        name="default_volume",
+        description="Set this server's fallback volume for tracks without presets.",
+    )
+    async def default_volume(self, interaction: discord.Interaction, percent: int) -> None:
+        guild = interaction.guild
+        if guild is None:
+            await interaction.response.send_message(
+                "This command can only be used in a server.",
+                ephemeral=True,
             )
+            return
+
+        panel = NowPlayingPanelService(self.bot)
+        async with panel.lock_for(guild.id):
+            result = await self._playback_service().set_default_volume(guild, percent)
+            if result.ok:
+                await panel.refresh_locked(
+                    guild=guild,
+                    channel=cast(discord.abc.Messageable | None, interaction.channel),
+                    reason="default_volume",
+                )
+        await interaction.response.send_message(result.message, ephemeral=True)
+
+    @app_commands.command(
+        name="reset_track_volume",
+        description="Remove the current track's saved volume preset.",
+    )
+    async def reset_track_volume(self, interaction: discord.Interaction) -> None:
+        guild = interaction.guild
+        if guild is None:
+            await interaction.response.send_message(
+                "This command can only be used in a server.",
+                ephemeral=True,
+            )
+            return
+
+        panel = NowPlayingPanelService(self.bot)
+        async with panel.lock_for(guild.id):
+            result = await self._playback_service().reset_current_track_volume(guild)
+            if result.ok:
+                await panel.refresh_locked(
+                    guild=guild,
+                    channel=cast(discord.abc.Messageable | None, interaction.channel),
+                    reason="reset_track_volume",
+                )
         await interaction.response.send_message(result.message, ephemeral=True)
 
     @app_commands.command(
@@ -450,3 +491,11 @@ class MusicCog(commands.Cog):
 
 async def setup(bot: WeaselBot) -> None:
     await bot.add_cog(MusicCog(bot))
+
+
+def prepare_play_all_session(state: GuildPlayerState, guild: object) -> bool:
+    """Return True when /play_all should append to an active session."""
+    if state.has_track and getattr(guild, "voice_client", None) is not None:
+        return True
+    state.clear_all()
+    return False

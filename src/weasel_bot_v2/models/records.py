@@ -38,6 +38,15 @@ class Track:
 
 
 @dataclass(frozen=True)
+class TrackVolumeOverride:
+    guild_id: int
+    track_id: int
+    volume: int
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+@dataclass(frozen=True)
 class PlayHistoryEntry:
     guild_id: int
     user_id: int | None = None

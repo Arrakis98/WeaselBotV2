@@ -144,3 +144,52 @@ This keeps Phase 5.2 small and self-hostable without adding a database table for
 Discord message state. Restart persistence is intentionally not claimed because
 persistent view registration and durable message references are not implemented
 yet.
+
+## ADR-0012: Weasel Galaxy Components V2 With Legacy Fallback
+
+- Status: Accepted
+- Date: 2026-06-14
+
+The Now Playing panel will render with the Weasel Galaxy Components V2 interface
+when the installed `discord.py` exposes the required Components V2 APIs. The
+primary accent is `#C026D3`, the interface language is English, and public
+player controls use emoji-only buttons with stable custom IDs.
+
+The panel service keeps a legacy embed renderer as a fallback until the
+Components V2 interface is validated live. Components V2 render failures are
+logged with safe guild/channel/message/error-class context and retried with the
+legacy embed renderer. Playback, queue state, ratings, and volume persistence
+must not depend on panel rendering success.
+
+The public panel does not show raw file paths or Lavalink technical status.
+Unknown artists display as `Divers`. Queue and More Actions controls use private
+ephemeral Discord interactions. Future custom emoji and optional mascot artwork
+are extension points only; no GIF, spritesheet, playlist, recommendation, radio,
+Chaos Mode, AI, or web playback behavior is added by this decision.
+
+## ADR-0013: Guild-Specific Track Volume Presets
+
+- Status: Accepted
+- Date: 2026-06-14
+
+Volume now has one playback-affecting persistent level: optional per-guild,
+per-local-track presets stored in `track_volume_overrides`. The old
+`guild_settings.default_volume` column remains for backward-compatible schema
+safety, but playback ignores it.
+
+The effective playback volume resolves as:
+
+1. `track_volume_overrides` row for `guild_id + track_id`
+2. 100
+
+Track presets are not stored on `tracks` because the same local track may need a
+different volume in different guilds. `/volume` and the Now Playing volume
+buttons save the currently playing track preset. `/reset_track_volume` removes
+the current track preset and reapplies 100. `/default_volume` is deprecated
+because a configurable guild fallback conflicts with the per-track-only design.
+
+The audio service still applies volume through the single existing
+Mafic/Lavalink `set_volume` path. Values remain clamped from 0 to 200, and values
+above 100 are allowed with a clipping warning. ReplayGain, normalization filters,
+or automatic loudness analysis are intentionally not implemented by this
+decision.

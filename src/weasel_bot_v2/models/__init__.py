@@ -8,6 +8,7 @@ from weasel_bot_v2.models.records import (
     Rating,
     RatingCounts,
     Track,
+    TrackVolumeOverride,
     UserRecord,
 )
 
@@ -19,5 +20,6 @@ __all__ = [
     "Rating",
     "RatingCounts",
     "Track",
+    "TrackVolumeOverride",
     "UserRecord",
 ]
