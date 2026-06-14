@@ -12,6 +12,7 @@ RatingValue = Literal["like", "superlike", "dislike", "superdislike"]
 VALID_RATINGS: frozenset[str] = frozenset(
     {"like", "superlike", "dislike", "superdislike"}
 )
+RATINGS_THAT_SKIP: frozenset[str] = frozenset({"dislike", "superdislike"})
 RATING_LABELS: dict[str, str] = {
     "like": "Like",
     "superlike": "SuperLike",

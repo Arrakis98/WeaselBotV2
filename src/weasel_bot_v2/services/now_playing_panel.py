@@ -14,6 +14,7 @@ import discord
 from weasel_bot_v2.models import RatingCounts, Track
 from weasel_bot_v2.repositories import RatingRepository, UserRepository
 from weasel_bot_v2.services.audio import AudioPlaybackService, PlaybackResult
+from weasel_bot_v2.services.player_actions import PlayerActionService
 from weasel_bot_v2.services.player_state import VOLUME_STEP, GuildPlayerState
 from weasel_bot_v2.services.ratings import RatingService
 
@@ -582,18 +583,18 @@ class NowPlayingPanelService:
 
         async with self.lock_for(guild.id):
             await self.disable_stale_interaction_panel(interaction)
-            state = self.bot.player_states.get(guild.id)
-            result = self._rating_service().rate_current_track(
-                state=state,
+            result = await PlayerActionService(self.bot).rate_current_track(
+                guild=guild,
                 user_id=interaction.user.id,
                 display_name=interaction.user.display_name,
                 rating_value=rating_value,
             )
-            await self.refresh_locked(
-                guild=guild,
-                channel=cast(discord.abc.Messageable | None, interaction.channel),
-                reason=f"rating:{rating_value}",
-            )
+            if result.ok:
+                await self.refresh_locked(
+                    guild=guild,
+                    channel=cast(discord.abc.Messageable | None, interaction.channel),
+                    reason=f"rating:{rating_value}",
+                )
 
         await send_ephemeral_once(interaction, result.message)
 

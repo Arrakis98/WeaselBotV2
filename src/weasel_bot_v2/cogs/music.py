@@ -14,12 +14,14 @@ from weasel_bot_v2.repositories import (
     UserRepository,
 )
 from weasel_bot_v2.services.audio import AudioPlaybackService
+from weasel_bot_v2.services.control_center import ControlCenterService, OpenControlPanelView
 from weasel_bot_v2.services.local_library import LocalLibraryService
 from weasel_bot_v2.services.now_playing_panel import (
     NowPlayingPanelService,
     format_queue,
     track_title,
 )
+from weasel_bot_v2.services.player_actions import PlayerActionService
 from weasel_bot_v2.services.player_state import GuildPlayerState
 from weasel_bot_v2.services.ratings import RatingService
 
@@ -90,7 +92,7 @@ class MusicCog(commands.Cog):
         description="Play the best matching indexed local track.",
     )
     async def play_local(self, interaction: discord.Interaction, query: str) -> None:
-        await interaction.response.defer(ephemeral=True, thinking=True)
+        await interaction.response.defer(thinking=True)
         library = self._library_service()
         matches = library.search(query, limit=1)
         if not matches:
@@ -108,6 +110,8 @@ class MusicCog(commands.Cog):
         playback = AudioPlaybackService(self.bot, self.bot.settings.bot.music_library)
         panel = NowPlayingPanelService(self.bot)
         async with panel.lock_for(guild.id):
+            state = self.bot.player_states.get_or_create(guild.id)
+            was_active = state.has_track
             result = await playback.play_local_track(interaction=interaction, track=matches[0])
             if result.ok:
                 await panel.refresh_locked(
@@ -115,6 +119,17 @@ class MusicCog(commands.Cog):
                     channel=cast(discord.abc.Messageable | None, interaction.channel),
                     reason="play_local",
                 )
+                message = compact_playback_ack(
+                    "Added to queue" if was_active else "Playback started",
+                    matches[0],
+                    detail=f"Queue position: {state.queue_length}" if was_active else None,
+                )
+                await interaction.followup.send(
+                    message,
+                    ephemeral=False,
+                    view=OpenControlPanelView(self.bot),
+                )
+                return
         await interaction.followup.send(result.message, ephemeral=True)
 
     @app_commands.command(
@@ -122,7 +137,7 @@ class MusicCog(commands.Cog):
         description="Shuffle all indexed local MP3 tracks into the playback queue.",
     )
     async def play_all(self, interaction: discord.Interaction) -> None:
-        await interaction.response.defer(ephemeral=True, thinking=True)
+        await interaction.response.defer(thinking=True)
         library = self._library_service()
         tracks = library.list_indexed_mp3_tracks()
         if not tracks:
@@ -154,11 +169,16 @@ class MusicCog(commands.Cog):
                     reason="play_all:enqueue",
                 )
                 message = (
-                    f"Found {found_count} indexed MP3 tracks. "
-                    f"Added {queued_count} to the queue starting at position {start_position}. "
-                    f"Queue length is now {state.queue_length}."
+                    "Added to queue\n"
+                    f"{queued_count} track(s) from {found_count} indexed MP3 tracks\n"
+                    f"Starting position: {start_position}\n"
+                    f"Queue length: {state.queue_length}"
                 )
-                await interaction.followup.send(message, ephemeral=True)
+                await interaction.followup.send(
+                    message,
+                    ephemeral=False,
+                    view=OpenControlPanelView(self.bot),
+                )
                 return
 
             first = tracks[0]
@@ -177,12 +197,13 @@ class MusicCog(commands.Cog):
 
         await interaction.followup.send(
             (
-                f"Found {found_count} indexed MP3 tracks. "
-                f"Now playing: {track_title(first)}. "
-                f"Queued {len(remaining)} more track(s). "
-                f"Queue length is now {state.queue_length}."
+                "Playback started\n"
+                f"{track_title(first)}\n"
+                f"Queued {len(remaining)} more track(s) from {found_count} indexed MP3 tracks\n"
+                f"Queue length: {state.queue_length}"
             ),
-            ephemeral=True,
+            ephemeral=False,
+            view=OpenControlPanelView(self.bot),
         )
 
     @app_commands.command(name="pause", description="Pause the current local track.")
@@ -300,6 +321,13 @@ class MusicCog(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         await self._refresh_panel(interaction, reason="now_playing")
         await interaction.followup.send("Now Playing panel refreshed.", ephemeral=True)
+
+    @app_commands.command(
+        name="controls",
+        description="Open your personal Weasel Galaxy control center.",
+    )
+    async def controls(self, interaction: discord.Interaction) -> None:
+        await ControlCenterService(self.bot).open(interaction)
 
     @app_commands.command(name="queue", description="Show the current local playback queue.")
     async def show_queue(self, interaction: discord.Interaction) -> None:
@@ -424,6 +452,9 @@ class MusicCog(commands.Cog):
             users=UserRepository(self.bot.database),
         )
 
+    def _action_service(self) -> PlayerActionService:
+        return PlayerActionService(self.bot)
+
     async def _rate_current_track(
         self,
         interaction: discord.Interaction,
@@ -439,9 +470,8 @@ class MusicCog(commands.Cog):
 
         panel = NowPlayingPanelService(self.bot)
         async with panel.lock_for(guild.id):
-            state = self.bot.player_states.get(guild.id)
-            result = self._rating_service().rate_current_track(
-                state=state,
+            result = await self._action_service().rate_current_track(
+                guild=guild,
                 user_id=interaction.user.id,
                 display_name=interaction.user.display_name,
                 rating_value=rating_value,
@@ -491,6 +521,29 @@ class MusicCog(commands.Cog):
 
 async def setup(bot: WeaselBot) -> None:
     await bot.add_cog(MusicCog(bot))
+
+
+def compact_playback_ack(action: str, track: object, *, detail: str | None = None) -> str:
+    lines = [action, track_title(track)]
+    metadata = compact_track_metadata(track)
+    if metadata:
+        lines.append(metadata)
+    if detail:
+        lines.append(detail)
+    return "\n".join(lines)
+
+
+def compact_track_metadata(track: object) -> str | None:
+    local_track = cast(Any, track)
+    parts = [
+        str(value).strip()
+        for value in (
+            getattr(local_track, "artist_guess", None),
+            getattr(local_track, "category_guess", None),
+        )
+        if value is not None and str(value).strip()
+    ]
+    return " • ".join(parts) if parts else None
 
 
 def prepare_play_all_session(state: GuildPlayerState, guild: object) -> bool:

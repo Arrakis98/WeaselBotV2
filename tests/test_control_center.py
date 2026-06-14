@@ -1,0 +1,447 @@
+from __future__ import annotations
+
+from pathlib import Path
+from types import SimpleNamespace
+from typing import Any, cast
+
+import discord
+import pytest
+
+from weasel_bot_v2.cogs.music import MusicCog
+from weasel_bot_v2.config import DatabaseConfig
+from weasel_bot_v2.database import SQLiteDatabase
+from weasel_bot_v2.models import Rating, Track
+from weasel_bot_v2.repositories import RatingRepository, TrackRepository
+from weasel_bot_v2.services.control_center import (
+    ControlCenterService,
+    ControlCenterView,
+    OpenControlPanelView,
+    control_center_custom_ids,
+)
+from weasel_bot_v2.services.now_playing_panel import (
+    NowPlayingPanelRecord,
+    NowPlayingPanelRegistry,
+)
+from weasel_bot_v2.services.player_state import PlayerStateStore
+
+
+@pytest.fixture
+def database(tmp_path: Path) -> SQLiteDatabase:
+    sqlite_database = SQLiteDatabase(DatabaseConfig(path=tmp_path / "weasel-test.db"))
+    sqlite_database.initialize()
+    return sqlite_database
+
+
+@pytest.mark.asyncio
+async def test_controls_command_creates_ephemeral_control_center(database: SQLiteDatabase) -> None:
+    bot = _FakeBot(database)
+    guild = _FakeGuild(guild_id=123, voice_client=None)
+    interaction = _FakeInteraction(guild=guild)
+
+    await _run_slash(MusicCog(cast(Any, bot)), "controls", interaction)
+
+    assert interaction.response_ephemeral == [True]
+    assert "WEASEL GALAXY CONTROL CENTER" in interaction.response_messages[0]
+    assert isinstance(interaction.response_views[0], ControlCenterView)
+
+
+@pytest.mark.asyncio
+async def test_open_control_panel_button_opens_fresh_ephemeral_state(
+    database: SQLiteDatabase,
+) -> None:
+    bot = _FakeBot(database)
+    guild = _FakeGuild(guild_id=123, voice_client=None)
+    first = _indexed_track(database, "Artist/first.mp3")
+    second = _indexed_track(database, "Artist/second.mp3")
+    bot.player_states.get_or_create(123).current_track = first
+    view = OpenControlPanelView(bot)
+    button = cast(discord.ui.Button[Any], view.children[0])
+    interaction = _FakeInteraction(guild=guild)
+    bot.player_states.get_or_create(123).current_track = second
+
+    await button.callback(interaction)  # type: ignore[misc]
+
+    assert interaction.response_ephemeral == [True]
+    assert "second" in interaction.response_messages[0]
+    assert "first" not in interaction.response_messages[0]
+    assert isinstance(interaction.response_views[0], ControlCenterView)
+
+
+def test_idle_control_center_disables_unavailable_controls(database: SQLiteDatabase) -> None:
+    bot = _FakeBot(database)
+    guild = _FakeGuild(guild_id=123, voice_client=None)
+    snapshot = ControlCenterService(bot).snapshot_for(guild)  # type: ignore[arg-type]
+
+    view = ControlCenterView(bot, snapshot)
+    enabled_labels = [
+        item.label
+        for item in view.children
+        if isinstance(item, discord.ui.Button) and not item.disabled
+    ]
+    disabled_labels = [
+        item.label
+        for item in view.children
+        if isinstance(item, discord.ui.Button) and item.disabled
+    ]
+
+    assert enabled_labels == ["Queue"]
+    assert "Skip" in disabled_labels
+    assert "Like" in disabled_labels
+
+
+@pytest.mark.asyncio
+async def test_control_center_playback_action_reuses_playback_service_and_refreshes_public_panel(
+    database: SQLiteDatabase,
+) -> None:
+    bot = _FakeBot(database)
+    player = _FakePlayer()
+    guild = _FakeGuild(guild_id=123, voice_client=player)
+    channel = _FakeChannel(channel_id=10)
+    bot.channels[10] = channel
+    interaction = _FakeInteraction(guild=guild, channel=channel)
+    current = _indexed_track(database, "Artist/current.mp3")
+    bot.player_states.get_or_create(123).current_track = current
+    public_message = await channel.send(view=discord.ui.View())
+    bot.now_playing_panels.set(NowPlayingPanelRecord(123, 10, public_message.id))
+
+    await ControlCenterService(bot).run_action(  # type: ignore[arg-type]
+        interaction,  # type: ignore[arg-type]
+        "next",
+    )
+
+    assert player.stop_count == 1
+    assert bot.player_states.get_or_create(123).current_track is None
+    assert public_message.edit_count == 1
+    assert interaction.edit_count == 1
+    assert interaction.followup_messages == []
+
+
+@pytest.mark.asyncio
+async def test_control_center_like_reuses_rating_service_without_skip(
+    database: SQLiteDatabase,
+) -> None:
+    bot = _FakeBot(database)
+    player = _FakePlayer()
+    guild = _FakeGuild(guild_id=123, voice_client=player)
+    interaction = _FakeInteraction(guild=guild)
+    current = _indexed_track(database, "Artist/current.mp3")
+    assert current.id is not None
+    bot.player_states.get_or_create(123).current_track = current
+
+    await ControlCenterService(bot).run_action(  # type: ignore[arg-type]
+        interaction,  # type: ignore[arg-type]
+        "like",
+    )
+
+    assert RatingRepository(database).get_rating(123, 42, current.id) == Rating(
+        guild_id=123,
+        user_id=42,
+        track_id=current.id,
+        rating="like",
+    )
+    assert player.stop_count == 0
+    assert bot.player_states.get_or_create(123).current_track == current
+    assert interaction.edit_count == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("rating_value", ["dislike", "superdislike"])
+async def test_control_center_negative_ratings_save_then_skip(
+    database: SQLiteDatabase,
+    rating_value: str,
+) -> None:
+    bot = _FakeBot(database)
+    player = _FakePlayer()
+    guild = _FakeGuild(guild_id=123, voice_client=player)
+    interaction = _FakeInteraction(guild=guild)
+    current = _indexed_track(database, "Artist/current.mp3")
+    assert current.id is not None
+    bot.player_states.get_or_create(123).current_track = current
+
+    await ControlCenterService(bot).run_action(  # type: ignore[arg-type]
+        interaction,  # type: ignore[arg-type]
+        rating_value,
+    )
+
+    assert RatingRepository(database).get_rating(123, 42, current.id) == Rating(
+        guild_id=123,
+        user_id=42,
+        track_id=current.id,
+        rating=rating_value,
+    )
+    assert player.stop_count == 1
+    assert bot.player_states.get_or_create(123).current_track is None
+    assert interaction.edit_count == 1
+
+
+@pytest.mark.asyncio
+async def test_control_center_queue_action_edits_once_without_public_panel_refresh(
+    database: SQLiteDatabase,
+) -> None:
+    bot = _FakeBot(database)
+    guild = _FakeGuild(guild_id=123, voice_client=None)
+    interaction = _FakeInteraction(guild=guild)
+    bot.player_states.get_or_create(123).current_track = _indexed_track(
+        database,
+        "Artist/current.mp3",
+    )
+
+    await ControlCenterService(bot).run_action(  # type: ignore[arg-type]
+        interaction,  # type: ignore[arg-type]
+        "queue",
+    )
+
+    assert "Now playing: current" in interaction.edited_messages[0]
+    assert interaction.edit_count == 1
+    assert interaction.followup_messages == []
+
+
+@pytest.mark.asyncio
+async def test_successful_play_local_acknowledgement_includes_control_panel_opener(
+    database: SQLiteDatabase,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bot = _FakeBot(database)
+    cog = MusicCog(cast(Any, bot))
+    track = _indexed_track(database, "Rock/Artist/current.mp3")
+    _patch_cog_services(cog, library=_FakeLibrary([track]), playback=_FakePlayback(bot))
+    monkeypatch.setattr(
+        "weasel_bot_v2.cogs.music.AudioPlaybackService",
+        lambda current_bot, music_root: _FakePlayback(current_bot),
+    )
+    guild = _FakeGuild(guild_id=123, voice_client=object())
+    interaction = _FakeInteraction(guild=guild)
+
+    await _run_slash(cog, "play_local", interaction, "current")
+
+    assert interaction.deferred_public is True
+    assert interaction.followup_ephemeral == [False]
+    assert interaction.followup_messages == ["Playback started\ncurrent\nArtist • Rock"]
+    assert isinstance(interaction.followup_views[0], OpenControlPanelView)
+    assert _button_labels(interaction.followup_views[0]) == ["Open Control Panel"]
+
+
+@pytest.mark.asyncio
+async def test_successful_play_all_acknowledgement_includes_control_panel_opener(
+    database: SQLiteDatabase,
+) -> None:
+    bot = _FakeBot(database)
+    cog = MusicCog(cast(Any, bot))
+    tracks = [
+        _indexed_track(database, "Rock/Artist/first.mp3"),
+        _indexed_track(database, "Rock/Artist/second.mp3"),
+    ]
+    _patch_cog_services(cog, library=_FakeLibrary(tracks), playback=_FakePlayback(bot))
+    guild = _FakeGuild(guild_id=123, voice_client=object())
+    interaction = _FakeInteraction(guild=guild)
+
+    await _run_slash(cog, "play_all", interaction)
+
+    assert interaction.followup_ephemeral == [False]
+    assert "Playback started" in interaction.followup_messages[0]
+    assert "Queued 1 more track(s)" in interaction.followup_messages[0]
+    assert isinstance(interaction.followup_views[0], OpenControlPanelView)
+    assert _button_labels(interaction.followup_views[0]) == ["Open Control Panel"]
+
+
+def test_control_center_custom_ids_are_stable_and_unique() -> None:
+    ids = control_center_custom_ids()
+
+    assert "weasel:controls:open" in ids
+    assert len(ids) == len(set(ids))
+
+
+async def _run_slash(
+    cog: MusicCog,
+    command_name: str,
+    interaction: _FakeInteraction,
+    *args: object,
+) -> None:
+    command = next(
+        command for command in MusicCog.__cog_app_commands__ if command.name == command_name
+    )
+    await cast(Any, command).callback(cog, interaction, *args)
+
+
+def _patch_cog_services(cog: MusicCog, *, library: object, playback: object) -> None:
+    cog_any = cast(Any, cog)
+    cog_any._library_service = lambda: library
+    cog_any._playback_service = lambda: playback
+
+
+def _button_labels(view: discord.ui.View | None) -> list[str | None]:
+    if view is None:
+        return []
+    return [
+        item.label
+        for item in view.children
+        if isinstance(item, discord.ui.Button) and not item.disabled
+    ]
+
+
+def _indexed_track(database: SQLiteDatabase, relative_path: str) -> Track:
+    return TrackRepository(database).upsert(
+        Track(
+            source="local",
+            source_id=relative_path,
+            relative_path=relative_path,
+            file_name=relative_path.rsplit("/", maxsplit=1)[-1],
+            display_title=relative_path.rsplit("/", maxsplit=1)[-1].removesuffix(".mp3"),
+            title=relative_path.rsplit("/", maxsplit=1)[-1].removesuffix(".mp3"),
+            artist_guess="Artist",
+            category_guess="Rock" if relative_path.count("/") >= 2 else None,
+            extension=".mp3",
+        )
+    )
+
+
+class _FakeBot:
+    def __init__(self, database: SQLiteDatabase) -> None:
+        self.database = database
+        self.player_states = PlayerStateStore()
+        self.now_playing_panels = NowPlayingPanelRegistry()
+        self.lavalink_available = True
+        self.settings = SimpleNamespace(bot=SimpleNamespace(music_library=Path("/music")))
+        self.channels: dict[int, _FakeChannel] = {}
+
+    def get_channel(self, channel_id: int) -> _FakeChannel | None:
+        return self.channels.get(channel_id)
+
+
+class _FakeGuild:
+    def __init__(self, *, guild_id: int, voice_client: object | None) -> None:
+        self.id = guild_id
+        self.voice_client = voice_client
+
+
+class _FakePlayer:
+    def __init__(self) -> None:
+        self.stop_count = 0
+
+    async def stop(self) -> None:
+        self.stop_count += 1
+
+
+class _FakeLibrary:
+    def __init__(self, tracks: list[Track]) -> None:
+        self.tracks = tracks
+
+    def search(self, query: str, *, limit: int) -> list[Track]:
+        return self.tracks[:limit]
+
+    def list_indexed_mp3_tracks(self) -> list[Track]:
+        return list(self.tracks)
+
+
+class _FakePlayback:
+    def __init__(self, bot: _FakeBot) -> None:
+        self.bot = bot
+
+    async def play_local_track(self, *, interaction: _FakeInteraction, track: Track) -> Any:
+        state = self.bot.player_states.get_or_create(interaction.guild.id)
+        if state.current_track is not None:
+            position = state.enqueue(track)
+            return SimpleNamespace(ok=True, message=f"Added to queue at position {position}")
+        state.set_current_track(track)
+        return SimpleNamespace(ok=True, message=f"Now playing: {track.display_title}")
+
+
+class _FakeInteraction:
+    def __init__(self, *, guild: _FakeGuild, channel: _FakeChannel | None = None) -> None:
+        self.guild = guild
+        self.user = SimpleNamespace(id=42, display_name="Listener")
+        self.channel = channel or _FakeChannel(channel_id=10)
+        self.response = _FakeResponse(self)
+        self.followup = _FakeFollowup(self)
+        self.message = None
+        self.response_messages: list[str] = []
+        self.response_views: list[discord.ui.View | None] = []
+        self.response_ephemeral: list[bool] = []
+        self.followup_messages: list[str] = []
+        self.followup_views: list[discord.ui.View | None] = []
+        self.followup_ephemeral: list[bool] = []
+        self.edited_messages: list[str] = []
+        self.edited_views: list[discord.ui.View | None] = []
+        self.edit_count = 0
+        self.deferred_public = False
+
+
+class _FakeResponse:
+    def __init__(self, interaction: _FakeInteraction) -> None:
+        self.interaction = interaction
+        self._done = False
+
+    def is_done(self) -> bool:
+        return self._done
+
+    async def defer(self, *, ephemeral: bool = False, thinking: bool = False) -> None:
+        self._done = True
+        self.interaction.deferred_public = not ephemeral
+
+    async def send_message(
+        self,
+        message: str,
+        *,
+        view: discord.ui.View | None = None,
+        ephemeral: bool = False,
+    ) -> None:
+        self._done = True
+        self.interaction.response_messages.append(message)
+        self.interaction.response_views.append(view)
+        self.interaction.response_ephemeral.append(ephemeral)
+
+    async def edit_message(
+        self,
+        *,
+        content: str,
+        view: discord.ui.View | None = None,
+    ) -> None:
+        self._done = True
+        self.interaction.edit_count += 1
+        self.interaction.edited_messages.append(content)
+        self.interaction.edited_views.append(view)
+
+
+class _FakeFollowup:
+    def __init__(self, interaction: _FakeInteraction) -> None:
+        self.interaction = interaction
+
+    async def send(
+        self,
+        message: str,
+        *,
+        view: discord.ui.View | None = None,
+        ephemeral: bool = False,
+    ) -> None:
+        self.interaction.followup_messages.append(message)
+        self.interaction.followup_views.append(view)
+        self.interaction.followup_ephemeral.append(ephemeral)
+
+
+class _FakeChannel:
+    def __init__(self, *, channel_id: int) -> None:
+        self.id = channel_id
+        self.sent_messages: list[_FakeMessage] = []
+        self.next_message_id = 100
+
+    async def send(self, **kwargs: Any) -> _FakeMessage:
+        message = _FakeMessage(message_id=self.next_message_id)
+        self.next_message_id += 1
+        self.sent_messages.append(message)
+        return message
+
+    async def fetch_message(self, message_id: int) -> _FakeMessage:
+        for message in self.sent_messages:
+            if message.id == message_id:
+                return message
+        raise discord.NotFound(response=cast(Any, None), message="missing")
+
+
+class _FakeMessage:
+    def __init__(self, *, message_id: int) -> None:
+        self.id = message_id
+        self.edit_count = 0
+        self.flags = SimpleNamespace(components_v2=False)
+
+    async def edit(self, **kwargs: Any) -> None:
+        self.edit_count += 1
