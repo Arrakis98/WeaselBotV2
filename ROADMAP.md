@@ -1,464 +1,160 @@
-# Weasel Bot V2 - Roadmap
+# Weasel Bot V2 — Roadmap à partir de la version actuelle
+
+## Phase 5.5 — Stabilisation de la version actuelle
+
+* Finaliser le commit contenant Components V2, le hard stop, la queue propre, le loop fonctionnel et les volumes mémorisés par piste. 🛡️
+* Push sur `main` et création d’un nouveau tag stable. 🏷️
+* Vérifier les migrations SQLite, les tests, la restauration depuis la sauvegarde et les documents de déploiement. ✅
+* Documenter les dernières modifications importantes dans `arcadia-infra`. 🗂️
+
+## Phase 6 — Weasel Galaxy : identité et expérience Discord
+
+### Phase 6.1 — Direction artistique
+
+* Palette magenta, violet électrique et ambiance galaxy. 🌌
+* Pack d’icônes personnalisées sans texte pour les contrôles. ✨
+* Mascotte Weasel statique, puis test d’une variante animée. 🐾
+* Amélioration de la hiérarchie, de l’espacement et des états visuels du panneau Components V2. 🎨
+* Remplacement progressif des emojis Unicode génériques par des emojis d’application personnalisés. 💎
+
+### Phase 6.2 — Expérience d’utilisation
+
+* Petit message public compact lors d’un ajout, d’un skip ou d’un changement de piste. 🎵
+* Bouton permettant d’ouvrir un centre de contrôle éphémère complet, à la manière de Rythm. 🎛️
+* Panneau public principal plus léger et panneau personnel détaillé pour les actions avancées. 🧩
+* Réponses éphémères sobres, sans accumulation inutile. 🧹
+* Menu `⋯` pour queue, informations, même auteur, même catégorie, playlists et future radio. 📋
+
+### Phase 6.3 — Présence dans le salon vocal
+
+* Mettre à jour le statut du salon vocal avec le morceau en cours. 🔊
+* Effacer le statut lorsque le bot stoppe ou quitte. 📴
+* Ajouter éventuellement durée, artiste ou état du player dans une version compacte. ⏱️
+
+## Phase 7 — Profils et préférences musicales
+
+* `/my_preferences` ou `/profile`. 👤
+* Affichage des Likes, SuperLikes, Dislikes et SuperDislikes de l’utilisateur. ❤️
+* Listes paginées avec recherche et filtres. 🔍
+* Artistes, catégories et morceaux les mieux notés. 📊
+* Commandes `/my_likes`, `/my_dislikes`, `/my_superlikes`. 🗃️
+* Statistiques globales du serveur et profils séparés par utilisateur Discord. 👥
+* Préparation du moteur de recommandations, sans encore modifier automatiquement la lecture. 🧠
+
+## Phase 8 — Playlists modernes
+
+* Création, renommage, suppression et duplication de playlists. 📚
+* Ajout et retrait de morceaux depuis Discord. ➕
+* Playlists personnelles et playlists partagées au serveur. 🤝
+* Lecture dans l’ordre, aléatoire ou pondérée par ratings. 🔀
+* Import des anciennes playlists JSON de la V1. 📥
+* Boutons et menus pour gérer les playlists sans multiplier les commandes. 🎚️
+
+## Phase 9 — Gestion avancée de la bibliothèque
+
+* Lecture des tags ID3 : artiste, titre, album, année et pochette. 🏷️
+* Détection plus fiable des catégories et artistes. 🎤
+* Remplacement automatique de `Divers` lorsque de meilleures métadonnées existent. 🧾
+* Détection de doublons et outils de nettoyage. 🧼
+* Historique d’écoute réel, statistiques et morceaux récemment joués. 🕘
+* Recherche améliorée avec filtres par dossier, catégorie, artiste ou rating. 🔎
+
+## Phase 10 — Weasel Effects Studio
+
+* Bass Boost avec plusieurs intensités. 💥
+* Speed Control. ⏩
+* Pitch Shift. 🎼
+* Nightcore et Slowed. 🌙
+* Karaoke, tremolo, vibrato, rotation stéréo et low-pass. 🌀
+* Presets d’effets enregistrés. 💾
+* Interface éphémère dédiée avec sliders, menus ou modales lorsque Discord le permet. 🎛️
+* Effets gratuits et exécutés localement par Lavalink. 🏠
+* Étude séparée pour reverb, crossfade réel et traitements FFmpeg plus complexes. 🧪
+
+## Phase 11 — Lecture unifiée et sources web
+
+* Remplacer progressivement `/play_local` par une commande principale `/play`. ▶️
+* Recherche locale prioritaire. 💿
+* Lecture d’URL compatibles. 🔗
+* YouTube via un module séparé et remplaçable. 🌐
+* Autres fournisseurs via les plugins Lavalink appropriés lorsque cela reste fiable. 🎧
+* Une panne de source web ne doit jamais casser la bibliothèque locale. 🛡️
+* Cache contrôlé et aucun téléchargement permanent par défaut. 📦
+
+## Phase 12 — Radio intelligente et recommandations
+
+* `Same artist`. 🎙️
+* `Same category`. 🗂️
+* Radio locale basée sur les dossiers et métadonnées. 📻
+* Favoriser Likes et SuperLikes. ❤️
+* Réduire ou exclure Dislikes et SuperDislikes selon les réglages. 🚫
+* Tenir compte des utilisateurs présents dans le salon vocal. 👥
+* Éviter les répétitions trop fréquentes. 🔁
+* Mode découverte et mélange contrôlé. 🌠
+
+## Phase 13 — Personnalité et Chaos Mode
+
+* Messages et réactions légèrement espiègles. 🐾
+* Personnalité configurable et désactivable. 🎭
+* Événements surprises, votes et challenges musicaux. 🎲
+* Mode DJ autonome. 🔥
+* Chaos Mode sécurisé avec cooldowns et permissions. ⚠️
+* Aucun comportement destructif ou incontrôlable sur la bibliothèque. 🔒
 
-## Project direction
+## Phase 14 — Durcissement production
 
-Weasel Bot V2 is a free, self-hosted Discord bot focused on music, interaction, personality, and autonomous party modes.
+* Health checks Docker. 🩺
+* Reconnexion et récupération après perte de Lavalink ou Discord. 🔄
+* Sauvegardes automatiques de la base et des configurations privées. 💾
+* Logs structurés et rotation des journaux. 📜
+* Métriques simples : mémoire, CPU, files, erreurs et lecteurs actifs. 📈
+* Déploiement stable et redémarrage automatique sur Arcadia. 🏗️
+* Documentation finale dans le repo projet et `arcadia-infra`. 🗂️
 
-The project must start cleanly as a new public repository. It must not reuse secrets, private infrastructure notes, or unstable legacy structure from V1.
+## Phase 15 — Weasel Web Control Center
 
-Core principles:
+### Phase 15.1 — API de contrôle
 
-* Free and self-hostable.
-* Public-repository safe.
-* Docker-first.
-* Lavalink-first for audio.
-* Discord slash commands first.
-* Rich Discord UI with buttons, select menus, embeds, and later modals.
-* SQLite-first for persistent bot data.
-* Local music library support.
-* Existing JSON playlist/history compatibility through import or adapter layers.
-* AI is optional and not part of the core build.
-* The bot must work without any paid API.
+* Créer une API privée autour des services existants du bot. 🔌
+* Exposer état du player, queue, bibliothèque, playlists, ratings, volumes et effets. 📡
+* Ne jamais exposer Lavalink directement au navigateur. 🛡️
+* Authentifier et autoriser chaque action sensible. 🔐
 
----
+### Phase 15.2 — Connexion au portfolio
 
-## Phase 0 - Project foundation
-
-Goal: define the project before coding.
-
-Deliverables:
-
-* `README.md`
-* `AGENTS.md`
-* `ROADMAP.md`
-* `PROJECT_VISION.md`
-* `SECURITY.md`
-* `docs/architecture.md`
-* `docs/decisions.md`
-* `.gitignore`
-* `.env.example`
-* `config.example.yaml`
-* `compose.example.yml`
-
-Decisions to record:
-
-* Project name.
-* Public repository rules.
-* Docker/Lavalink architecture.
-* Python version.
-* Discord library.
-* Lavalink Python client choice.
-* Data storage strategy.
-* Music library mount strategy.
-* Secrets strategy.
-* Initial feature scope.
+* Ajouter une zone privée au futur site personnel. 🌐
+* Connexion avec le compte Discord. 🪪
+* Autoriser uniquement les utilisateurs ou rôles choisis. ✅
+* Session web sécurisée et bouton de déconnexion. 🚪
 
-Exit criteria:
+### Phase 15.3 — Dashboard temps réel
 
-* Codex has clear operating rules.
-* No secrets can accidentally enter Git.
-* The project vision is written.
-* The technical direction is stable enough to start the skeleton.
-
----
-
-## Phase 1 - Minimal Docker/Lavalink stack
-
-Goal: prove that the base infrastructure works before building features.
-
-Deliverables:
-
-* Dockerfile for the bot.
-* Docker Compose example with:
-
-  * bot service
-  * Lavalink service
-  * internal Docker network
-  * persistent data volume
-  * read-only music library mount
-* Lavalink `application.yml` example.
-* Local development instructions.
-* Health-check or startup validation.
-
-Features:
+* Morceau actuel, progression, volume et effets. 🎶
+* Contrôles play, pause, skip, back et stop. 🎛️
+* Queue réorganisable par glisser-déposer. ↕️
+* Mises à jour temps réel lorsque Discord ou un autre utilisateur agit. ⚡
+* Affichage des personnes présentes dans le salon vocal si utile. 👥
 
-* Start Lavalink in Docker.
-* Start the bot container.
-* Bot can connect to Discord.
-* Bot can connect to Lavalink.
-* `/ping` works.
-* `/audio_status` shows Lavalink connection status.
+### Phase 15.4 — Bibliothèque et playlists web
 
-Exit criteria:
+* Recherche et navigation dans toutes les musiques. 🔍
+* Création et édition de playlists depuis le navigateur. 📚
+* Modification des catégories, artistes et tags. 🏷️
+* Gestion des volumes par piste et des ratings. 🎚️
+* Import de nouveaux fichiers et déclenchement d’un nouveau scan. 📥
+* Corbeille et confirmations avant toute suppression. 🗑️
 
-* `docker compose up` starts the stack.
-* The Discord bot logs in successfully.
-* The bot detects Lavalink.
-* No music playback required yet.
-
----
+### Phase 15.5 — Atelier audio web
 
-## Phase 2 - Core bot architecture
-
-Goal: build the internal skeleton cleanly.
-
-Core modules:
-
-* `bot`
-* `config`
-* `logging`
-* `database`
-* `discord_ui`
-* `audio`
-* `library`
-* `playlists`
-* `users`
-* `personality`
-* `chaos`
+* Création de versions ralenties, accélérées, pitchées ou bass boosted. 🧪
+* Prévisualisation avant export. 🎧
+* Travaux en arrière-plan avec progression visible. ⏳
+* Enregistrement des créations dans un dossier dédié sur HDD. 💽
+* Ajout automatique à la bibliothèque après validation. ➕
 
-Deliverables:
+## Phase 16 — IA locale optionnelle
 
-* Python package under `src/`.
-* Clean config loader.
-* SQLite initialization.
-* Migration system or simple schema bootstrap.
-* Structured logging.
-* Typed models.
-* Tests for config, queue, and storage.
-* Basic cogs:
-
-  * admin
-  * music
-  * playlists
-  * users
-  * debug
-
-Exit criteria:
-
-* Tests pass.
-* Bot starts locally.
-* Slash commands sync in a test guild.
-* SQLite database is created safely.
-* No hard-coded private paths.
-
----
-
-## Phase 3 - Local music MVP
-
-Goal: play local music reliably through Lavalink.
-
-Features:
-
-* Index local music library.
-* Search local tracks.
-* Play local track.
-* Queue local tracks.
-* Skip, stop, pause, resume.
-* Now-playing embed.
-* Buttons:
-
-  * pause/resume
-  * skip
-  * stop
-  * like
-  * dislike
-  * show queue
-
-Data:
-
-* `tracks`
-* `play_history`
-* `ratings`
-* `guild_settings`
-
-Exit criteria:
-
-* A user can join a voice channel and play a local MP3.
-* Queue works per guild.
-* Buttons work.
-* History records plays.
-* Likes/dislikes are stored.
-
----
-
-## Phase 4 - Playlists and library management
-
-Goal: make the bot useful for real listening sessions.
-
-Features:
-
-* Import existing JSON playlists.
-* List playlists.
-* Show playlist contents.
-* Play playlist.
-* Shuffle playlist.
-* Create/edit/delete V2 playlists.
-* Add/remove tracks.
-* Playlist ownership and permissions.
-* Favorite playlists.
-
-Data:
-
-* `playlists`
-* `playlist_items`
-* `playlist_permissions`
-
-Exit criteria:
-
-* Existing V1 playlist data can be imported or read.
-* V2 playlists work from Discord.
-* Playlist commands use buttons/select menus where useful.
-
----
-
-## Phase 5 - Users, stats, and preferences
-
-Goal: make the bot remember people.
-
-Features:
-
-* User profiles.
-* User listening history.
-* Favorite tracks.
-* Disliked tracks.
-* Personal stats.
-* Server stats.
-* Taste profile:
-
-  * favorite artists
-  * favorite folders/categories
-  * skipped tracks
-  * repeated tracks
-* Optional privacy controls.
-
-Exit criteria:
-
-* `/profile` works.
-* `/stats` works.
-* Recommendations can use user data later.
-* The bot can distinguish guild-wide and user-specific preferences.
-
----
-
-## Phase 6 - Web playback
-
-Goal: add internet playback without making the bot fragile.
-
-Features:
-
-* Search web track.
-* Play web track.
-* Queue web track.
-* Save web track reference to playlist.
-* Error handling for unavailable sources.
-* Feature flag to disable web playback.
-
-Rules:
-
-* Web playback must be isolated behind a resolver layer.
-* If web playback breaks, local playback must still work.
-* No cookies or secrets may be committed.
-
-Exit criteria:
-
-* `/play_web` works.
-* Web errors are clean.
-* Local playback remains independent.
-
----
-
-## Phase 7 - Radio and autoplay
-
-Goal: make the bot able to continue a session automatically.
-
-Features:
-
-* Radio from current track.
-* Radio from playlist.
-* Radio from user taste.
-* Radio from guild taste.
-* Radio intensity:
-
-  * calm
-  * normal
-  * energetic
-  * chaotic
-* Auto-fill queue when it becomes low.
-* Stop conditions and admin controls.
-
-Exit criteria:
-
-* `/radio start` works.
-* `/radio stop` works.
-* The bot can keep playing without manual queueing.
-* Users can see why a track was selected.
-
----
-
-## Phase 8 - Personality engine
-
-Goal: give the bot a recognizable identity without requiring AI.
-
-Features:
-
-* Scripted messages.
-* Mood system.
-* Contextual reactions.
-* Track announcements.
-* User teasing, but configurable and safe.
-* Server-specific personality settings.
-* Message packs.
-
-Examples:
-
-* Launching a shameful track.
-* Reacting to repeated skips.
-* Announcing chaos mode.
-* Celebrating a liked track.
-* Mocking overplayed songs.
-
-Exit criteria:
-
-* The bot feels alive.
-* Personality can be disabled.
-* Messages are not hard-coded inside audio logic.
-
----
-
-## Phase 9 - Chaos Mode / Mad DJ Mode
-
-Goal: create the signature feature.
-
-Chaos Mode is an autonomous DJ session where the bot takes partial control of music selection and server interaction.
-
-Features:
-
-* Start a chaos session.
-* Choose duration.
-* Choose intensity.
-* Choose source pool:
-
-  * local library
-  * playlists
-  * favorites
-  * web
-  * mixed
-* Rules engine:
-
-  * avoid repeats
-  * avoid disliked tracks
-  * alternate energy
-  * increase intensity over time
-  * surprise drops
-* Discord interactions:
-
-  * vote next mood
-  * vote skip
-  * choose between 3 tracks
-  * panic stop
-* Announcements:
-
-  * dramatic intros
-  * fake DJ commentary
-  * shame messages
-  * session recap
-
-Exit criteria:
-
-* Chaos Mode can run a short session safely.
-* Admin can stop it instantly.
-* Queue remains consistent.
-* The bot records what happened.
-
----
-
-## Phase 10 - Deployment and production hardening
-
-Goal: make the bot reliable on Arcadia.
-
-Deliverables:
-
-* Production Docker Compose file template.
-* Backup notes.
-* Logs strategy.
-* Restart policy.
-* Database backup procedure.
-* Lavalink maintenance notes.
-* Arcadia service documentation template.
-
-Features:
-
-* Clean shutdown.
-* Reconnect to Lavalink.
-* Reconnect to Discord.
-* Persistent data volume.
-* Health checks.
-* No root requirement at runtime.
-
-Exit criteria:
-
-* Bot can run for long sessions.
-* Restart does not corrupt data.
-* Logs are readable.
-* Deployment is documented.
-
----
-
-## Phase 11 - Optional AI module
-
-Goal: add AI features without making the bot depend on AI.
-
-Possible features:
-
-* Local Ollama integration.
-* AI-generated announcements.
-* AI-generated session recap.
-* AI-assisted recommendations.
-* AI personality variants.
-* Natural-language commands.
-
-Rules:
-
-* AI must be optional.
-* Bot must work when AI is disabled.
-* No paid API required.
-* No private Discord data should be sent to external APIs by default.
-
-Exit criteria:
-
-* AI can be enabled as a plugin.
-* Core music features work without it.
-
----
-
-## Phase 12 - Optional web dashboard
-
-Goal: manage the bot outside Discord.
-
-Possible features:
-
-* View current queue.
-* Manage playlists.
-* View stats.
-* Edit personality packs.
-* Configure Chaos Mode presets.
-* View logs.
-
-Exit criteria:
-
-* Dashboard is optional.
-* Discord bot does not depend on it.
-
----
-
-## Long-term vision
-
-Weasel Bot V2 should become a complete self-hosted Discord music companion:
-
-* reliable as a music bot,
-* fun as a server mascot,
-* interactive as a Discord app,
-* autonomous as a chaotic DJ,
-* extensible as a long-term personal project.
-
-The project should grow in layers. Every phase must leave the bot working better than before.
+* Ollama pour les messages, résumés de goûts et suggestions. 🤖
+* Aide à la création de playlists. 🧠
+* Personnalité plus dynamique. 🎭
+* L’IA reste facultative et ne doit jamais devenir nécessaire à la lecture musicale. 🛡️
