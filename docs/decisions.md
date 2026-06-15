@@ -236,3 +236,29 @@ skip action exactly once, then quarantine the captured previous track. If the
 move fails, the rating and skip remain completed. Administrative purge,
 inspection, and restoration commands use record IDs and indexed tracks only;
 they never accept raw filesystem paths.
+
+## ADR-0016: Guild-Wide `/play_all` Artist Policy
+
+- Status: Accepted
+- Date: 2026-06-15
+
+`/play_all` artist exclusions are persisted per guild in SQLite rather than kept
+in memory or treated as per-user preferences. The data model has three parts:
+multiple normalized artist exclusions, multiple track exception records, and one
+guild-wide strict-mode boolean.
+
+Artist names use the same case-insensitive and accent-insensitive normalization
+as local-library search. Exclusions are resolved once against currently indexed
+artists and stored by normalized artist key plus a display name. Track
+exceptions store stable indexed track IDs. Commands never accept filesystem
+paths.
+
+The policy is deliberately scoped only to future `/play_all` selections. It does
+not affect search, direct local playback, manual queue additions, existing queue
+contents, ratings, quarantine administration, restoration, playlists, profiles,
+or recommendations. Unavailable and quarantined tracks remain ineligible even
+when an exception record exists.
+
+Strict mode is guild-wide. When disabled, valid stored track exceptions can pass
+through artist exclusions. When enabled, every track from an excluded artist is
+filtered and stored exceptions are ignored until strict mode is disabled again.

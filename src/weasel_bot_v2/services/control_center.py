@@ -9,10 +9,12 @@ import discord
 
 from weasel_bot_v2.services.audio import AudioPlaybackService, PlaybackResult
 from weasel_bot_v2.services.now_playing_panel import (
+    RATINGS_CENTER_PLACEHOLDER_CUSTOM_ID,
     NowPlayingPanelService,
     NowPlayingSnapshot,
     format_queue,
     format_track_information,
+    resolve_control_emoji,
     respond_ephemeral_update,
     shuffle_upcoming_queue,
 )
@@ -26,7 +28,7 @@ OPEN_CONTROL_PANEL_CUSTOM_ID = "weasel:controls:open"
 class ControlCenterButtonSpec:
     key: str
     custom_id: str
-    label: str
+    label: str | None
     emoji: str | None
     row: int
     style: discord.ButtonStyle
@@ -36,7 +38,7 @@ CONTROL_CENTER_SPECS: tuple[ControlCenterButtonSpec, ...] = (
     ControlCenterButtonSpec(
         "previous",
         "weasel:controls:back",
-        "Back",
+        None,
         "⏮️",
         0,
         discord.ButtonStyle.secondary,
@@ -44,15 +46,15 @@ CONTROL_CENTER_SPECS: tuple[ControlCenterButtonSpec, ...] = (
     ControlCenterButtonSpec(
         "pause_resume",
         "weasel:controls:pause_resume",
-        "Pause",
+        None,
         "⏯️",
         0,
-        discord.ButtonStyle.primary,
+        discord.ButtonStyle.secondary,
     ),
     ControlCenterButtonSpec(
         "next",
         "weasel:controls:skip",
-        "Skip",
+        None,
         "⏭️",
         0,
         discord.ButtonStyle.secondary,
@@ -60,15 +62,15 @@ CONTROL_CENTER_SPECS: tuple[ControlCenterButtonSpec, ...] = (
     ControlCenterButtonSpec(
         "stop",
         "weasel:controls:stop",
-        "Stop",
+        None,
         "⏹️",
         0,
-        discord.ButtonStyle.danger,
+        discord.ButtonStyle.secondary,
     ),
     ControlCenterButtonSpec(
         "loop",
         "weasel:controls:loop",
-        "Loop",
+        None,
         "🔁",
         0,
         discord.ButtonStyle.secondary,
@@ -76,7 +78,7 @@ CONTROL_CENTER_SPECS: tuple[ControlCenterButtonSpec, ...] = (
     ControlCenterButtonSpec(
         "volume_down",
         "weasel:controls:volume_down",
-        "Volume -",
+        None,
         "🔉",
         1,
         discord.ButtonStyle.secondary,
@@ -84,23 +86,23 @@ CONTROL_CENTER_SPECS: tuple[ControlCenterButtonSpec, ...] = (
     ControlCenterButtonSpec(
         "volume_up",
         "weasel:controls:volume_up",
-        "Volume +",
+        None,
         "🔊",
         1,
         discord.ButtonStyle.secondary,
     ),
     ControlCenterButtonSpec(
-        "reset_volume",
-        "weasel:controls:reset_volume",
-        "Reset Volume",
-        "↩️",
+        "shuffle",
+        "weasel:controls:shuffle",
+        None,
+        "🔀",
         1,
         discord.ButtonStyle.secondary,
     ),
     ControlCenterButtonSpec(
         "queue",
         "weasel:controls:queue",
-        "Queue",
+        None,
         "📜",
         1,
         discord.ButtonStyle.secondary,
@@ -108,31 +110,39 @@ CONTROL_CENTER_SPECS: tuple[ControlCenterButtonSpec, ...] = (
     ControlCenterButtonSpec(
         "more",
         "weasel:controls:more",
-        "More",
         None,
+        "⋯",
         1,
         discord.ButtonStyle.secondary,
     ),
     ControlCenterButtonSpec(
         "like",
         "weasel:controls:like",
-        "Like",
+        None,
         "❤️",
         2,
-        discord.ButtonStyle.success,
+        discord.ButtonStyle.secondary,
     ),
     ControlCenterButtonSpec(
         "superlike",
         "weasel:controls:superlike",
-        "SuperLike",
+        None,
         "💎",
         2,
-        discord.ButtonStyle.success,
+        discord.ButtonStyle.secondary,
+    ),
+    ControlCenterButtonSpec(
+        "placeholder",
+        RATINGS_CENTER_PLACEHOLDER_CUSTOM_ID,
+        None,
+        "❔",
+        2,
+        discord.ButtonStyle.secondary,
     ),
     ControlCenterButtonSpec(
         "dislike",
         "weasel:controls:dislike",
-        "Dislike",
+        None,
         "👎",
         2,
         discord.ButtonStyle.secondary,
@@ -140,10 +150,10 @@ CONTROL_CENTER_SPECS: tuple[ControlCenterButtonSpec, ...] = (
     ControlCenterButtonSpec(
         "superdislike",
         "weasel:controls:superdislike",
-        "SuperDislike",
+        None,
         "💀",
         2,
-        discord.ButtonStyle.danger,
+        discord.ButtonStyle.secondary,
     ),
 )
 
@@ -170,6 +180,14 @@ ADVANCED_ACTIONS: tuple[ControlCenterButtonSpec, ...] = (
         "weasel:controls:advanced:shuffle",
         "Shuffle Future Queue",
         "🔀",
+        1,
+        discord.ButtonStyle.secondary,
+    ),
+    ControlCenterButtonSpec(
+        "reset_volume",
+        "weasel:controls:advanced:reset_volume",
+        "Reset Track Volume",
+        "↩️",
         1,
         discord.ButtonStyle.secondary,
     ),
@@ -390,11 +408,13 @@ class ControlCenterService:
             "next": playback.skip,
             "stop": playback.stop,
             "loop": lambda current_guild: playback.toggle_loop(current_guild.id),
+            "shuffle": lambda current_guild: shuffle_upcoming_queue(
+                self.bot.player_states.get(current_guild.id)
+            ),
             "volume_down": lambda current_guild: playback.change_volume(
                 current_guild, -VOLUME_STEP
             ),
             "volume_up": lambda current_guild: playback.change_volume(current_guild, VOLUME_STEP),
-            "reset_volume": playback.reset_current_track_volume,
         }
         action = actions.get(action_key)
         if action is None:
@@ -414,6 +434,8 @@ class ControlCenterService:
         if action_key == "shuffle_queue":
             state = self.bot.player_states.get(guild.id)
             return shuffle_upcoming_queue(state)
+        if action_key == "reset_volume":
+            return playback.reset_current_track_volume(guild)
         if action_key == "clear_queue":
             return playback.clear_queue(guild.id)
         if action_key == "leave":
@@ -446,28 +468,40 @@ class ControlCenterView(discord.ui.View):
         self.bot = bot
         self.guild_id = snapshot.guild_id
         for spec in CONTROL_CENTER_SPECS:
-            self.add_item(ControlCenterButton(spec, snapshot))
+            if spec.key == "placeholder":
+                self.add_item(ControlCenterPlaceholderButton(spec))
+                continue
+            self.add_item(ControlCenterButton(bot, spec, snapshot))
 
 
-class ControlCenterButton(discord.ui.Button[Any]):
-    def __init__(self, spec: ControlCenterButtonSpec, snapshot: NowPlayingSnapshot) -> None:
-        label = (
-            "Resume"
-            if spec.key == "pause_resume" and snapshot.status == "Paused"
-            else spec.label
-        )
-        disabled = _control_disabled(spec.key, snapshot)
-        style = (
-            discord.ButtonStyle.success
-            if spec.key == "loop" and snapshot.loop_enabled
-            else spec.style
-        )
+class ControlCenterPlaceholderButton(discord.ui.Button[Any]):
+    def __init__(self, spec: ControlCenterButtonSpec) -> None:
         super().__init__(
-            label=label,
+            label=None,
             emoji=spec.emoji,
             custom_id=spec.custom_id,
             row=spec.row,
-            style=style,
+            style=discord.ButtonStyle.secondary,
+            disabled=True,
+        )
+        self.spec = spec
+
+
+class ControlCenterButton(discord.ui.Button[Any]):
+    def __init__(
+        self,
+        bot: Any,
+        spec: ControlCenterButtonSpec,
+        snapshot: NowPlayingSnapshot,
+    ) -> None:
+        disabled = _control_disabled(spec.key, snapshot)
+        emoji = resolve_control_emoji(bot, spec.key, snapshot, fallback=spec.emoji)
+        super().__init__(
+            label=spec.label,
+            emoji=emoji,
+            custom_id=spec.custom_id,
+            row=spec.row,
+            style=spec.style,
             disabled=disabled,
         )
         self.spec = spec
@@ -484,14 +518,20 @@ class AdvancedActionsView(discord.ui.View):
         super().__init__(timeout=300)
         self.bot = bot
         for spec in ADVANCED_ACTIONS:
-            self.add_item(AdvancedActionButton(spec, snapshot))
+            self.add_item(AdvancedActionButton(bot, spec, snapshot))
 
 
 class AdvancedActionButton(discord.ui.Button[Any]):
-    def __init__(self, spec: ControlCenterButtonSpec, snapshot: NowPlayingSnapshot) -> None:
+    def __init__(
+        self,
+        bot: Any,
+        spec: ControlCenterButtonSpec,
+        snapshot: NowPlayingSnapshot,
+    ) -> None:
+        emoji = resolve_control_emoji(bot, spec.key, snapshot, fallback=spec.emoji)
         super().__init__(
             label=spec.label,
-            emoji=spec.emoji,
+            emoji=emoji,
             custom_id=spec.custom_id,
             row=spec.row,
             style=spec.style,
@@ -604,10 +644,14 @@ def control_center_custom_ids() -> tuple[str, ...]:
 def _control_disabled(key: str, snapshot: NowPlayingSnapshot) -> bool:
     if key in {"queue", "more"}:
         return False
+    if key == "placeholder":
+        return True
     if not snapshot.has_track:
         return True
     if key == "previous":
         return not snapshot.previous_available
+    if key == "shuffle":
+        return snapshot.queue_length <= 1
     return False
 
 

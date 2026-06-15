@@ -95,6 +95,37 @@ SCHEMA_STATEMENTS = (
     )
     """,
     """
+    CREATE TABLE IF NOT EXISTS play_all_artist_exclusions (
+        guild_id INTEGER NOT NULL,
+        normalized_artist TEXT NOT NULL,
+        display_artist TEXT NOT NULL,
+        created_by_user_id INTEGER NOT NULL,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (guild_id, normalized_artist),
+        FOREIGN KEY (created_by_user_id) REFERENCES users (user_id)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS play_all_track_exceptions (
+        guild_id INTEGER NOT NULL,
+        track_id INTEGER NOT NULL,
+        created_by_user_id INTEGER NOT NULL,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (guild_id, track_id),
+        FOREIGN KEY (track_id) REFERENCES tracks (id),
+        FOREIGN KEY (created_by_user_id) REFERENCES users (user_id)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS play_all_policy (
+        guild_id INTEGER PRIMARY KEY,
+        strict_exclusions INTEGER NOT NULL DEFAULT 0,
+        updated_by_user_id INTEGER,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (updated_by_user_id) REFERENCES users (user_id)
+    )
+    """,
+    """
     CREATE TABLE IF NOT EXISTS playlists (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         guild_id INTEGER,
@@ -155,6 +186,41 @@ SCHEMA_MIGRATIONS = (
     )
     """,
     "CREATE INDEX IF NOT EXISTS idx_track_quarantine_state ON track_quarantine(state, track_id)",
+    """
+    CREATE TABLE IF NOT EXISTS play_all_artist_exclusions (
+        guild_id INTEGER NOT NULL,
+        normalized_artist TEXT NOT NULL,
+        display_artist TEXT NOT NULL,
+        created_by_user_id INTEGER NOT NULL,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (guild_id, normalized_artist),
+        FOREIGN KEY (created_by_user_id) REFERENCES users (user_id)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS play_all_track_exceptions (
+        guild_id INTEGER NOT NULL,
+        track_id INTEGER NOT NULL,
+        created_by_user_id INTEGER NOT NULL,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (guild_id, track_id),
+        FOREIGN KEY (track_id) REFERENCES tracks (id),
+        FOREIGN KEY (created_by_user_id) REFERENCES users (user_id)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS play_all_policy (
+        guild_id INTEGER PRIMARY KEY,
+        strict_exclusions INTEGER NOT NULL DEFAULT 0,
+        updated_by_user_id INTEGER,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (updated_by_user_id) REFERENCES users (user_id)
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_play_all_exclusions_guild "
+    "ON play_all_artist_exclusions(guild_id)",
+    "CREATE INDEX IF NOT EXISTS idx_play_all_exceptions_guild "
+    "ON play_all_track_exceptions(guild_id)",
     """
     CREATE TABLE IF NOT EXISTS track_volume_overrides (
         guild_id INTEGER NOT NULL,

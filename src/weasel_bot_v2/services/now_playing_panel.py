@@ -13,6 +13,7 @@ import discord
 
 from weasel_bot_v2.models import RatingCounts, Track
 from weasel_bot_v2.repositories import RatingRepository, UserRepository
+from weasel_bot_v2.services.application_emojis import ApplicationEmojiRegistry
 from weasel_bot_v2.services.audio import AudioPlaybackService, PlaybackResult
 from weasel_bot_v2.services.player_actions import PlayerActionService
 from weasel_bot_v2.services.player_state import VOLUME_STEP, GuildPlayerState
@@ -23,6 +24,7 @@ LOGGER = logging.getLogger(__name__)
 WEASEL_GALAXY_ACCENT = 0xC026D3
 UNKNOWN_ARTIST = "Divers"
 QUEUE_PREVIEW_LIMIT = 10
+RATINGS_CENTER_PLACEHOLDER_CUSTOM_ID = "weasel:placeholder:ratings-center"
 
 
 class PanelRenderMode(StrEnum):
@@ -169,16 +171,16 @@ PLAYER_CONTROL_SPECS: tuple[ControlSpec, ...] = (
         "⏯️",
         None,
         0,
-        discord.ButtonStyle.primary,
+        discord.ButtonStyle.secondary,
     ),
     ControlSpec("next", "weasel:now_playing:skip", "⏭️", None, 0, discord.ButtonStyle.secondary),
-    ControlSpec("stop", "weasel:now_playing:stop", "⏹️", None, 0, discord.ButtonStyle.danger),
+    ControlSpec("stop", "weasel:now_playing:stop", "⏹️", None, 0, discord.ButtonStyle.secondary),
     ControlSpec("loop", "weasel:now_playing:loop", "🔁", None, 0, discord.ButtonStyle.secondary),
     ControlSpec(
         "volume_down",
         "weasel:now_playing:volume_down",
         "🔉",
-        "−",
+        None,
         1,
         discord.ButtonStyle.secondary,
     ),
@@ -186,11 +188,10 @@ PLAYER_CONTROL_SPECS: tuple[ControlSpec, ...] = (
         "volume_up",
         "weasel:now_playing:volume_up",
         "🔊",
-        "+",
+        None,
         1,
         discord.ButtonStyle.secondary,
     ),
-    ControlSpec("queue", "weasel:now_playing:queue", "📜", None, 1, discord.ButtonStyle.secondary),
     ControlSpec(
         "shuffle",
         "weasel:now_playing:shuffle",
@@ -199,15 +200,24 @@ PLAYER_CONTROL_SPECS: tuple[ControlSpec, ...] = (
         1,
         discord.ButtonStyle.secondary,
     ),
-    ControlSpec("more", "weasel:now_playing:more", None, "⋯", 1, discord.ButtonStyle.secondary),
-    ControlSpec("like", "weasel:now_playing:like", "❤️", None, 2, discord.ButtonStyle.success),
+    ControlSpec("queue", "weasel:now_playing:queue", "📜", None, 1, discord.ButtonStyle.secondary),
+    ControlSpec("more", "weasel:now_playing:more", "⋯", None, 1, discord.ButtonStyle.secondary),
+    ControlSpec("like", "weasel:now_playing:like", "❤️", None, 2, discord.ButtonStyle.secondary),
     ControlSpec(
         "superlike",
         "weasel:now_playing:superlike",
         "💎",
         None,
         2,
-        discord.ButtonStyle.success,
+        discord.ButtonStyle.secondary,
+    ),
+    ControlSpec(
+        "placeholder",
+        RATINGS_CENTER_PLACEHOLDER_CUSTOM_ID,
+        "❔",
+        None,
+        2,
+        discord.ButtonStyle.secondary,
     ),
     ControlSpec(
         "dislike",
@@ -223,7 +233,7 @@ PLAYER_CONTROL_SPECS: tuple[ControlSpec, ...] = (
         "💀",
         None,
         2,
-        discord.ButtonStyle.danger,
+        discord.ButtonStyle.secondary,
     ),
 )
 
@@ -399,20 +409,13 @@ class ComponentsV2PanelRenderer:
 
         container.add_item(
             discord.ui.TextDisplay(
-                "❤️ "
-                f"{snapshot.rating_counts.like}   "
-                "💎 "
-                f"{snapshot.rating_counts.superlike}   "
-                "👎 "
-                f"{snapshot.rating_counts.dislike}   "
-                "💀 "
-                f"{snapshot.rating_counts.superdislike}"
+                format_components_v2_rating_totals(bot, snapshot.rating_counts)
             )
         )
         container.add_item(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
         for row_index in range(3):
             row_items = [
-                build_control_button(spec, snapshot)
+                build_control_button(spec, snapshot, bot)
                 for spec in PLAYER_CONTROL_SPECS
                 if spec.row == row_index
             ]
@@ -890,7 +893,7 @@ class NowPlayingLegacyView(discord.ui.View):
         self.bot = bot
         self.guild_id = snapshot.guild_id
         for spec in PLAYER_CONTROL_SPECS:
-            self.add_item(build_control_button(spec, snapshot))
+            self.add_item(build_control_button(spec, snapshot, bot))
 
 
 class DisabledNowPlayingView(discord.ui.View):
@@ -907,12 +910,12 @@ class DisabledNowPlayingView(discord.ui.View):
 
 
 class PanelControlButton(discord.ui.Button[Any]):
-    def __init__(self, spec: ControlSpec, snapshot: NowPlayingSnapshot) -> None:
-        style = (
-            discord.ButtonStyle.success
-            if spec.key == "loop" and snapshot.loop_enabled
-            else spec.style
-        )
+    def __init__(
+        self,
+        bot: Any,
+        spec: ControlSpec,
+        snapshot: NowPlayingSnapshot,
+    ) -> None:
         disabled = not snapshot.has_track
         if spec.key == "previous":
             disabled = not snapshot.previous_available or not snapshot.has_track
@@ -920,10 +923,11 @@ class PanelControlButton(discord.ui.Button[Any]):
             disabled = False
         if spec.key == "shuffle":
             disabled = snapshot.queue_length <= 1
+        emoji = resolve_control_emoji(bot, spec.key, snapshot, fallback=spec.emoji)
         super().__init__(
-            style=style,
+            style=spec.style,
             label=spec.label,
-            emoji=spec.emoji,
+            emoji=emoji,
             disabled=disabled,
             custom_id=spec.custom_id,
         )
@@ -981,6 +985,18 @@ class PanelControlButton(discord.ui.Button[Any]):
                 await service.run_rating_action(interaction, self.spec.key)
 
 
+class PlaceholderControlButton(discord.ui.Button[Any]):
+    def __init__(self, spec: ControlSpec) -> None:
+        super().__init__(
+            style=discord.ButtonStyle.secondary,
+            label=None,
+            emoji=spec.emoji,
+            disabled=True,
+            custom_id=spec.custom_id,
+        )
+        self.spec = spec
+
+
 class MoreActionsSelect(discord.ui.Select[Any]):
     def __init__(self, bot: Any, snapshot: NowPlayingSnapshot | None) -> None:
         super().__init__(
@@ -988,7 +1004,7 @@ class MoreActionsSelect(discord.ui.Select[Any]):
             placeholder="More actions",
             min_values=1,
             max_values=1,
-            options=list(MORE_ACTION_OPTIONS),
+            options=build_more_action_options(bot),
         )
         self.bot = bot
         self.snapshot = snapshot
@@ -1025,8 +1041,72 @@ class MoreActionsView(discord.ui.View):
         self.add_item(MoreActionsSelect(bot, snapshot))
 
 
-def build_control_button(spec: ControlSpec, snapshot: NowPlayingSnapshot) -> PanelControlButton:
-    return PanelControlButton(spec, snapshot)
+def build_control_button(
+    spec: ControlSpec,
+    snapshot: NowPlayingSnapshot,
+    bot: Any | None = None,
+) -> discord.ui.Button[Any]:
+    if spec.key == "placeholder":
+        return PlaceholderControlButton(spec)
+    return PanelControlButton(bot, spec, snapshot)
+
+
+def build_more_action_options(bot: Any | None) -> list[discord.SelectOption]:
+    options: list[discord.SelectOption] = []
+    for option in MORE_ACTION_OPTIONS:
+        emoji = resolve_more_action_option_emoji(bot, option.value, fallback=option.emoji)
+        options.append(
+            discord.SelectOption(
+                label=option.label,
+                value=option.value,
+                description=option.description,
+                emoji=emoji,
+            )
+        )
+    return options
+
+
+def resolve_control_emoji(
+    bot: Any | None,
+    key: str,
+    snapshot: Any,
+    *,
+    fallback: discord.PartialEmoji | str | None,
+) -> discord.PartialEmoji | str | None:
+    registry = getattr(bot, "application_emoji_registry", None)
+    if not isinstance(registry, ApplicationEmojiRegistry):
+        registry = ApplicationEmojiRegistry.empty()
+    return registry.resolve_button(
+        key,
+        fallback,
+        loop_enabled=getattr(snapshot, "loop_enabled", None),
+    )
+
+
+def resolve_more_action_option_emoji(
+    bot: Any | None,
+    option_value: str,
+    *,
+    fallback: discord.PartialEmoji | str | None,
+) -> discord.PartialEmoji | str | None:
+    registry = getattr(bot, "application_emoji_registry", None)
+    if not isinstance(registry, ApplicationEmojiRegistry):
+        registry = ApplicationEmojiRegistry.empty()
+    return registry.resolve_more_action_option(option_value, fallback)
+
+
+def format_components_v2_rating_totals(bot: Any | None, counts: RatingCounts) -> str:
+    return (
+        f"{resolve_rating_text_emoji(bot, 'like', '❤️')} {counts.like}   "
+        f"{resolve_rating_text_emoji(bot, 'superlike', '💎')} {counts.superlike}   "
+        f"{resolve_rating_text_emoji(bot, 'dislike', '👎')} {counts.dislike}   "
+        f"{resolve_rating_text_emoji(bot, 'superdislike', '💀')} {counts.superdislike}"
+    )
+
+
+def resolve_rating_text_emoji(bot: Any | None, key: str, fallback: str) -> str:
+    emoji = resolve_control_emoji(bot, key, None, fallback=fallback)
+    return str(emoji) if emoji is not None else fallback
 
 
 def build_now_playing_embed(snapshot: NowPlayingSnapshot) -> discord.Embed:

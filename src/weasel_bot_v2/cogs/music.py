@@ -12,6 +12,7 @@ from discord.ext import commands
 from weasel_bot_v2.bot import WeaselBot
 from weasel_bot_v2.models import QuarantineRecord
 from weasel_bot_v2.repositories import (
+    PlayAllPolicyRepository,
     QuarantineRepository,
     RatingRepository,
     TrackRepository,
@@ -24,6 +25,13 @@ from weasel_bot_v2.services.now_playing_panel import (
     NowPlayingPanelService,
     format_queue,
     track_title,
+)
+from weasel_bot_v2.services.play_all_policy import (
+    PlayAllPolicyService,
+    PlayAllPolicySummary,
+    display_artist_for_track,
+    exception_status,
+    normalized_artist_for_track,
 )
 from weasel_bot_v2.services.player_actions import PlayerActionService
 from weasel_bot_v2.services.player_state import GuildPlayerState
@@ -148,15 +156,14 @@ class MusicCog(commands.Cog):
     async def play_all(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(thinking=True)
         library = self._library_service()
-        tracks = library.list_indexed_mp3_tracks()
-        if not tracks:
+        indexed_tracks = library.list_indexed_mp3_tracks()
+        if not indexed_tracks:
             await interaction.followup.send(
                 "No indexed local MP3 tracks found. Run /library_scan first.",
                 ephemeral=True,
             )
             return
 
-        random.shuffle(tracks)
         guild = interaction.guild
         if guild is None:
             await interaction.followup.send(
@@ -165,8 +172,21 @@ class MusicCog(commands.Cog):
             )
             return
 
+        policy_pool = self._play_all_policy_service().filter_tracks_for_play_all(
+            guild.id,
+            indexed_tracks,
+        )
+        tracks = list(policy_pool.eligible_tracks)
+        if not tracks:
+            await interaction.followup.send(
+                "No eligible local MP3 tracks remain after the /play_all policy filter.",
+                ephemeral=True,
+            )
+            return
+
+        random.shuffle(tracks)
         playback = self._playback_service()
-        found_count = len(tracks)
+        found_count = policy_pool.total_indexed_mp3
         panel = NowPlayingPanelService(self.bot)
         async with panel.lock_for(guild.id):
             state = self.bot.player_states.get_or_create(guild.id)
@@ -470,6 +490,141 @@ class MusicCog(commands.Cog):
         await interaction.response.send_message(result.message, ephemeral=True)
 
     @app_commands.command(
+        name="playall_exclude_artist",
+        description="Exclude an indexed artist from future /play_all selections.",
+    )
+    async def playall_exclude_artist(
+        self,
+        interaction: discord.Interaction,
+        artist: str,
+    ) -> None:
+        if not await self._require_policy_admin(interaction):
+            return
+        guild = cast(discord.Guild, interaction.guild)
+        result = self._play_all_policy_service().add_artist_exclusion(
+            guild_id=guild.id,
+            user_id=interaction.user.id,
+            display_name=getattr(interaction.user, "display_name", None),
+            artist_query=artist,
+        )
+        await interaction.response.send_message(result.message, ephemeral=True)
+
+    @app_commands.command(
+        name="playall_unexclude_artist",
+        description="Remove an artist exclusion without deleting stored exceptions.",
+    )
+    async def playall_unexclude_artist(
+        self,
+        interaction: discord.Interaction,
+        artist: str,
+    ) -> None:
+        if not await self._require_policy_admin(interaction):
+            return
+        guild = cast(discord.Guild, interaction.guild)
+        result = self._play_all_policy_service().remove_artist_exclusion(
+            guild_id=guild.id,
+            artist_query=artist,
+        )
+        await interaction.response.send_message(result.message, ephemeral=True)
+
+    @app_commands.command(
+        name="playall_exclusions",
+        description="List this server's /play_all artist exclusions.",
+    )
+    async def playall_exclusions(self, interaction: discord.Interaction) -> None:
+        if not await self._require_policy_admin(interaction):
+            return
+        guild = cast(discord.Guild, interaction.guild)
+        summary = self._play_all_policy_service().summary(guild.id)
+        await interaction.response.send_message(
+            format_play_all_exclusions(summary),
+            ephemeral=True,
+        )
+
+    @app_commands.command(
+        name="playall_add_exception",
+        description="Allow one indexed track through /play_all artist exclusions.",
+    )
+    async def playall_add_exception(
+        self,
+        interaction: discord.Interaction,
+        track: str,
+    ) -> None:
+        if not await self._require_policy_admin(interaction):
+            return
+        guild = cast(discord.Guild, interaction.guild)
+        result = self._play_all_policy_service().add_track_exception(
+            guild_id=guild.id,
+            user_id=interaction.user.id,
+            display_name=getattr(interaction.user, "display_name", None),
+            track_query=track,
+        )
+        await interaction.response.send_message(result.message, ephemeral=True)
+
+    @app_commands.command(
+        name="playall_remove_exception",
+        description="Remove one stored /play_all track exception.",
+    )
+    async def playall_remove_exception(
+        self,
+        interaction: discord.Interaction,
+        track: str,
+    ) -> None:
+        if not await self._require_policy_admin(interaction):
+            return
+        guild = cast(discord.Guild, interaction.guild)
+        result = self._play_all_policy_service().remove_track_exception(
+            guild_id=guild.id,
+            track_query=track,
+        )
+        await interaction.response.send_message(result.message, ephemeral=True)
+
+    @app_commands.command(
+        name="playall_exceptions",
+        description="List this server's stored /play_all track exceptions.",
+    )
+    async def playall_exceptions(self, interaction: discord.Interaction) -> None:
+        if not await self._require_policy_admin(interaction):
+            return
+        guild = cast(discord.Guild, interaction.guild)
+        summary = self._play_all_policy_service().summary(guild.id)
+        await interaction.response.send_message(
+            format_play_all_exceptions(summary),
+            ephemeral=True,
+        )
+
+    @app_commands.command(
+        name="playall_strict",
+        description="Enable or disable strict /play_all artist exclusions.",
+    )
+    async def playall_strict(self, interaction: discord.Interaction, enabled: bool) -> None:
+        if not await self._require_policy_admin(interaction):
+            return
+        guild = cast(discord.Guild, interaction.guild)
+        policy = self._play_all_policy_service().set_strict(
+            guild_id=guild.id,
+            user_id=interaction.user.id,
+            display_name=getattr(interaction.user, "display_name", None),
+            enabled=enabled,
+        )
+        state = "enabled" if policy.strict_exclusions else "disabled"
+        await interaction.response.send_message(
+            f"Strict /play_all artist exclusions {state}. Stored exceptions were kept.",
+            ephemeral=True,
+        )
+
+    @app_commands.command(
+        name="playall_policy",
+        description="Show this server's /play_all artist exclusion policy.",
+    )
+    async def playall_policy(self, interaction: discord.Interaction) -> None:
+        if not await self._require_policy_admin(interaction):
+            return
+        guild = cast(discord.Guild, interaction.guild)
+        summary = self._play_all_policy_service().summary(guild.id)
+        await interaction.response.send_message(format_play_all_policy(summary), ephemeral=True)
+
+    @app_commands.command(
         name="purge_superdisliked",
         description="Preview or move SuperDisliked tracks into reversible quarantine.",
     )
@@ -574,6 +729,29 @@ class MusicCog(commands.Cog):
 
     def _action_service(self) -> PlayerActionService:
         return PlayerActionService(self.bot)
+
+    def _play_all_policy_service(self) -> PlayAllPolicyService:
+        return PlayAllPolicyService(
+            policy=PlayAllPolicyRepository(self.bot.database),
+            tracks=TrackRepository(self.bot.database),
+            users=UserRepository(self.bot.database),
+            library=self._library_service(),
+        )
+
+    async def _require_policy_admin(self, interaction: discord.Interaction) -> bool:
+        if interaction.guild is None:
+            await interaction.response.send_message(
+                "This command can only be used in a server.",
+                ephemeral=True,
+            )
+            return False
+        if await self._is_admin_or_owner(interaction):
+            return True
+        await interaction.response.send_message(
+            "Only an administrator or bot owner can manage /play_all policy.",
+            ephemeral=True,
+        )
+        return False
 
     async def _is_admin_or_owner(self, interaction: discord.Interaction) -> bool:
         permissions = getattr(interaction.user, "guild_permissions", None)
@@ -756,6 +934,60 @@ def format_quarantine_list(records: Sequence[QuarantineRecord], tracks: TrackRep
             f"#{record.id} {title}{suffix} | {record.state} | "
             f"{record.quarantined_at or 'unknown date'}"
         )
+    return "\n".join(lines)
+
+
+def format_play_all_policy(summary: PlayAllPolicySummary) -> str:
+    strict = "enabled" if summary.policy.strict_exclusions else "disabled"
+    return "\n".join(
+        [
+            "/play_all policy",
+            f"Strict mode: {strict}",
+            f"Excluded artists: {len(summary.exclusions)}",
+            f"Stored exceptions: {len(summary.exceptions)}",
+            f"Currently effective exceptions: {summary.effective_exception_count}",
+        ]
+    )
+
+
+def format_play_all_exclusions(summary: PlayAllPolicySummary) -> str:
+    strict = "enabled" if summary.policy.strict_exclusions else "disabled"
+    if not summary.exclusions:
+        return f"No /play_all artist exclusions are stored.\nStrict mode: {strict}"
+    tracks_by_artist: dict[str, int] = {}
+    for _, track, _ in summary.exceptions:
+        if track is None:
+            continue
+        normalized = normalized_artist_for_track(track)
+        tracks_by_artist[normalized] = tracks_by_artist.get(normalized, 0) + 1
+    lines = ["/play_all artist exclusions", f"Strict mode: {strict}"]
+    for exclusion in summary.exclusions[:20]:
+        exception_count = tracks_by_artist.get(exclusion.normalized_artist, 0)
+        lines.append(f"- {exclusion.display_artist} ({exception_count} stored exception(s))")
+    if len(summary.exclusions) > 20:
+        lines.append(f"...and {len(summary.exclusions) - 20} more.")
+    return "\n".join(lines)
+
+
+def format_play_all_exceptions(summary: PlayAllPolicySummary) -> str:
+    if not summary.exceptions:
+        return "No /play_all track exceptions are stored."
+    excluded_artists = {exclusion.normalized_artist for exclusion in summary.exclusions}
+    lines = ["/play_all track exceptions"]
+    for _, track, stored_status in summary.exceptions[:20]:
+        if track is None:
+            lines.append("- Missing indexed track | unavailable")
+            continue
+        status = exception_status(
+            track,
+            excluded_artists=excluded_artists,
+            strict=summary.policy.strict_exclusions,
+        )
+        if status != stored_status:
+            status = stored_status
+        lines.append(f"- {display_artist_for_track(track)} — {track_title(track)} | {status}")
+    if len(summary.exceptions) > 20:
+        lines.append(f"...and {len(summary.exceptions) - 20} more.")
     return "\n".join(lines)
 
 

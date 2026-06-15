@@ -2,6 +2,9 @@
 
 from weasel_bot_v2.models.records import (
     GuildSettings,
+    PlayAllArtistExclusion,
+    PlayAllPolicy,
+    PlayAllTrackException,
     PlayHistoryEntry,
     Playlist,
     PlaylistItem,
@@ -15,6 +18,9 @@ from weasel_bot_v2.models.records import (
 
 __all__ = [
     "GuildSettings",
+    "PlayAllArtistExclusion",
+    "PlayAllPolicy",
+    "PlayAllTrackException",
     "Playlist",
     "PlaylistItem",
     "QuarantineRecord",

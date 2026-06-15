@@ -117,6 +117,14 @@ Expected Discord slash commands after the bot logs in:
 - `/purge_superdisliked`
 - `/quarantine_list`
 - `/restore_quarantined`
+- `/playall_exclude_artist`
+- `/playall_unexclude_artist`
+- `/playall_exclusions`
+- `/playall_add_exception`
+- `/playall_remove_exception`
+- `/playall_exceptions`
+- `/playall_strict`
+- `/playall_policy`
 
 The Now Playing panel also exposes active Like, SuperLike, Dislike, and
 SuperDislike buttons. Ratings are stored for later personalization work, but they
@@ -179,6 +187,17 @@ eligible SuperDisliked local tracks without filesystem changes, and
 `execute:true` moves them instead of deleting them. `/quarantine_list` and
 `/restore_quarantined` provide the minimal reversible audit workflow. Discord
 output uses container-relative paths only and never host paths.
+
+`/play_all` supports guild-wide artist exclusion policy. Administrators can store
+multiple excluded artists, multiple per-track exceptions, and one guild-wide
+strict-mode boolean. With strict mode disabled, `/play_all` filters excluded
+artists but keeps valid stored exception tracks eligible. With strict mode
+enabled, all tracks by excluded artists are filtered and exceptions are ignored
+until strict mode is disabled again. This policy only affects new `/play_all`
+selections; `/play_local`, `/search_local`, manual queue additions, current
+playback, existing queue contents, ratings, quarantine administration, and
+restoration are unchanged. Quarantined or unavailable tracks remain ineligible
+for `/play_all` regardless of exception records.
 
 Lavalink is only reachable on the internal Docker network by default. The example
 compose file mounts the active music library read-only at `/music` for both bot

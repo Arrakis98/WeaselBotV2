@@ -33,6 +33,9 @@ def test_database_schema_bootstrap_creates_initial_tables(tmp_path: Path) -> Non
         "play_history",
         "ratings",
         "track_volume_overrides",
+        "play_all_artist_exclusions",
+        "play_all_track_exceptions",
+        "play_all_policy",
         "playlists",
         "playlist_items",
     }.issubset(table_names)

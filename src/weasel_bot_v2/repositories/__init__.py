@@ -2,6 +2,7 @@
 
 from weasel_bot_v2.repositories.guild_settings import GuildSettingsRepository
 from weasel_bot_v2.repositories.history import HistoryRepository
+from weasel_bot_v2.repositories.play_all_policy import PlayAllPolicyRepository
 from weasel_bot_v2.repositories.playlists import PlaylistRepository
 from weasel_bot_v2.repositories.quarantine import QuarantineRepository
 from weasel_bot_v2.repositories.ratings import RatingRepository
@@ -12,6 +13,7 @@ from weasel_bot_v2.repositories.users import UserRepository
 __all__ = [
     "GuildSettingsRepository",
     "HistoryRepository",
+    "PlayAllPolicyRepository",
     "PlaylistRepository",
     "QuarantineRepository",
     "RatingRepository",

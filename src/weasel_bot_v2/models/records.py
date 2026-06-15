@@ -73,6 +73,31 @@ class RatingCounts:
 
 
 @dataclass(frozen=True)
+class PlayAllArtistExclusion:
+    guild_id: int
+    normalized_artist: str
+    display_artist: str
+    created_by_user_id: int
+    created_at: str | None = None
+
+
+@dataclass(frozen=True)
+class PlayAllTrackException:
+    guild_id: int
+    track_id: int
+    created_by_user_id: int
+    created_at: str | None = None
+
+
+@dataclass(frozen=True)
+class PlayAllPolicy:
+    guild_id: int
+    strict_exclusions: bool = False
+    updated_by_user_id: int | None = None
+    updated_at: str | None = None
+
+
+@dataclass(frozen=True)
 class Playlist:
     owner_user_id: int
     name: str

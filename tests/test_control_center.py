@@ -11,7 +11,12 @@ from weasel_bot_v2.cogs.music import MusicCog
 from weasel_bot_v2.config import DatabaseConfig
 from weasel_bot_v2.database import SQLiteDatabase
 from weasel_bot_v2.models import Rating, Track
-from weasel_bot_v2.repositories import RatingRepository, TrackRepository
+from weasel_bot_v2.repositories import (
+    RatingRepository,
+    TrackRepository,
+    TrackVolumeOverrideRepository,
+)
+from weasel_bot_v2.services.application_emojis import ApplicationEmojiRegistry
 from weasel_bot_v2.services.control_center import (
     AdvancedActionsView,
     AdvancedConfirmationView,
@@ -21,6 +26,7 @@ from weasel_bot_v2.services.control_center import (
     control_center_custom_ids,
 )
 from weasel_bot_v2.services.now_playing_panel import (
+    RATINGS_CENTER_PLACEHOLDER_CUSTOM_ID,
     NowPlayingPanelRecord,
     NowPlayingPanelRegistry,
 )
@@ -75,20 +81,21 @@ def test_idle_control_center_disables_unavailable_controls(database: SQLiteDatab
     snapshot = ControlCenterService(bot).snapshot_for(guild)  # type: ignore[arg-type]
 
     view = ControlCenterView(bot, snapshot)
-    enabled_labels = [
-        item.label
+    enabled_ids = [
+        item.custom_id
         for item in view.children
         if isinstance(item, discord.ui.Button) and not item.disabled
     ]
-    disabled_labels = [
-        item.label
+    disabled_ids = [
+        item.custom_id
         for item in view.children
         if isinstance(item, discord.ui.Button) and item.disabled
     ]
 
-    assert enabled_labels == ["Queue", "More"]
-    assert "Skip" in disabled_labels
-    assert "Like" in disabled_labels
+    assert enabled_ids == ["weasel:controls:queue", "weasel:controls:more"]
+    assert "weasel:controls:skip" in disabled_ids
+    assert "weasel:controls:like" in disabled_ids
+    assert RATINGS_CENTER_PLACEHOLDER_CUSTOM_ID in disabled_ids
 
 
 @pytest.mark.asyncio
@@ -183,6 +190,34 @@ async def test_more_actions_leave_reuses_hard_reset(database: SQLiteDatabase) ->
     assert player.disconnected is True
     assert bot.player_states.get_or_create(123).current_track is None
     assert interaction.edit_count == 1
+
+
+@pytest.mark.asyncio
+async def test_more_actions_reset_track_volume_reuses_existing_reset_action(
+    database: SQLiteDatabase,
+) -> None:
+    bot = _FakeBot(database)
+    player = _FakePlayer()
+    guild = _FakeGuild(guild_id=123, voice_client=player)
+    interaction = _FakeInteraction(guild=guild)
+    current = _indexed_track(database, "Artist/current.mp3")
+    assert current.id is not None
+    bot.player_states.get_or_create(123).current_track = current
+    bot.player_states.get_or_create(123).set_volume(140)
+    overrides = TrackVolumeOverrideRepository(database)
+    overrides.save(123, current.id, 140)
+
+    await ControlCenterService(bot).run_advanced_action(  # type: ignore[arg-type]
+        interaction,  # type: ignore[arg-type]
+        "reset_volume",
+    )
+
+    assert overrides.get(123, current.id) is None
+    assert bot.player_states.get_or_create(123).volume == 100
+    assert player.volumes == [100]
+    assert interaction.edit_count == 1
+    assert "Track volume reset to default: 100%" in interaction.edited_messages[0]
+    assert isinstance(interaction.edited_views[0], AdvancedActionsView)
 
 
 @pytest.mark.asyncio
@@ -365,7 +400,102 @@ def test_control_center_custom_ids_are_stable_and_unique() -> None:
     ids = control_center_custom_ids()
 
     assert "weasel:controls:open" in ids
+    assert RATINGS_CENTER_PLACEHOLDER_CUSTOM_ID in ids
+    assert "weasel:controls:reset_volume" not in ids
+    assert "weasel:controls:advanced:reset_volume" not in ids
     assert len(ids) == len(set(ids))
+
+
+def test_control_center_main_grid_matches_required_3x5_layout(database: SQLiteDatabase) -> None:
+    bot = _FakeBot(database)
+    guild = _FakeGuild(guild_id=123, voice_client=None)
+    state = bot.player_states.get_or_create(123)
+    state.current_track = _indexed_track(database, "Artist/current.mp3")
+    state.upcoming = [
+        _indexed_track(database, "Artist/next.mp3"),
+        _indexed_track(database, "Artist/later.mp3"),
+    ]
+    snapshot = ControlCenterService(bot).snapshot_for(guild)  # type: ignore[arg-type]
+
+    view = ControlCenterView(bot, snapshot)
+    rows: list[list[discord.ui.Button[Any]]] = [[], [], []]
+    for child in view.children:
+        assert isinstance(child, discord.ui.Button)
+        row = child.row
+        assert row is not None
+        rows[row].append(child)
+
+    assert [len(row) for row in rows] == [5, 5, 5]
+    assert [[button.custom_id for button in row] for row in rows] == [
+        [
+            "weasel:controls:back",
+            "weasel:controls:pause_resume",
+            "weasel:controls:skip",
+            "weasel:controls:stop",
+            "weasel:controls:loop",
+        ],
+        [
+            "weasel:controls:volume_down",
+            "weasel:controls:volume_up",
+            "weasel:controls:shuffle",
+            "weasel:controls:queue",
+            "weasel:controls:more",
+        ],
+        [
+            "weasel:controls:like",
+            "weasel:controls:superlike",
+            RATINGS_CENTER_PLACEHOLDER_CUSTOM_ID,
+            "weasel:controls:dislike",
+            "weasel:controls:superdislike",
+        ],
+    ]
+    buttons = [button for row in rows for button in row]
+    functional = [
+        button for button in buttons if button.custom_id != RATINGS_CENTER_PLACEHOLDER_CUSTOM_ID
+    ]
+    placeholder = [
+        button for button in buttons if button.custom_id == RATINGS_CENTER_PLACEHOLDER_CUSTOM_ID
+    ]
+    assert len(functional) == 14
+    assert len(placeholder) == 1
+    assert placeholder[0].disabled is True
+    assert placeholder[0].emoji is not None
+    assert str(placeholder[0].emoji) == "❔"
+    assert all(button.label is None for button in functional)
+    assert all(button.style is discord.ButtonStyle.secondary for button in functional)
+    assert all(button.emoji is not None for button in functional)
+
+
+def test_control_center_rating_buttons_use_application_emojis(database: SQLiteDatabase) -> None:
+    bot = _FakeBot(database)
+    bot.application_emoji_registry = ApplicationEmojiRegistry(
+        {
+            "wg_like": discord.PartialEmoji(name="wg_like", id=301),
+            "wg_superlike": discord.PartialEmoji(name="wg_superlike", id=302),
+            "wg_dislike": discord.PartialEmoji(name="wg_dislike", id=303),
+            "wg_superdislike": discord.PartialEmoji(name="wg_superdislike", id=304),
+        }
+    )
+    guild = _FakeGuild(guild_id=123, voice_client=None)
+    state = bot.player_states.get_or_create(123)
+    state.current_track = _indexed_track(database, "Artist/current.mp3")
+    snapshot = ControlCenterService(bot).snapshot_for(guild)  # type: ignore[arg-type]
+
+    view = ControlCenterView(bot, snapshot)
+    buttons = {
+        button.custom_id: button
+        for button in view.children
+        if isinstance(button, discord.ui.Button)
+    }
+
+    assert buttons["weasel:controls:like"].emoji is not None
+    assert str(buttons["weasel:controls:like"].emoji) == "<:wg_like:301>"
+    assert buttons["weasel:controls:superlike"].emoji is not None
+    assert str(buttons["weasel:controls:superlike"].emoji) == "<:wg_superlike:302>"
+    assert buttons["weasel:controls:dislike"].emoji is not None
+    assert str(buttons["weasel:controls:dislike"].emoji) == "<:wg_dislike:303>"
+    assert buttons["weasel:controls:superdislike"].emoji is not None
+    assert str(buttons["weasel:controls:superdislike"].emoji) == "<:wg_superdislike:304>"
 
 
 async def _run_slash(
@@ -420,6 +550,7 @@ class _FakeBot:
         self.lavalink_available = True
         self.settings = SimpleNamespace(bot=SimpleNamespace(music_library=Path("/music")))
         self.channels: dict[int, _FakeChannel] = {}
+        self.application_emoji_registry = ApplicationEmojiRegistry.empty()
 
     def get_channel(self, channel_id: int) -> _FakeChannel | None:
         return self.channels.get(channel_id)
@@ -435,12 +566,16 @@ class _FakePlayer:
     def __init__(self) -> None:
         self.stop_count = 0
         self.disconnected = False
+        self.volumes: list[int] = []
 
     async def stop(self) -> None:
         self.stop_count += 1
 
     async def disconnect(self) -> None:
         self.disconnected = True
+
+    async def set_volume(self, volume: int) -> None:
+        self.volumes.append(volume)
 
 
 class _FakeLibrary:

@@ -10,6 +10,7 @@ from discord.ext import commands
 from weasel_bot_v2.config import Settings
 from weasel_bot_v2.database import SQLiteDatabase
 from weasel_bot_v2.logging_config import configure_logging
+from weasel_bot_v2.services.application_emojis import ApplicationEmojiRegistry
 from weasel_bot_v2.services.audio import AudioPlaybackService
 from weasel_bot_v2.services.now_playing_panel import NowPlayingPanelRegistry
 from weasel_bot_v2.services.player_state import PlayerStateStore
@@ -35,11 +36,13 @@ class WeaselBot(commands.Bot):
         self.database = SQLiteDatabase(settings.database)
         self.player_states = PlayerStateStore()
         self.now_playing_panels = NowPlayingPanelRegistry()
+        self.application_emoji_registry = ApplicationEmojiRegistry.empty()
         self.lavalink_pool: Any | None = None
         self.lavalink_available = False
         self.lavalink_status = "not configured"
         self.lavalink_last_error: str | None = None
         self._lavalink_connection_started = False
+        self._application_emojis_loaded = False
         self._lavalink_connection_task: asyncio.Task[None] | None = None
 
     async def setup_hook(self) -> None:
@@ -57,6 +60,7 @@ class WeaselBot(commands.Bot):
             self.user,
             self.user.id if self.user else "unknown",
         )
+        await self._load_application_emojis()
         self._start_lavalink_connection()
 
     def _start_lavalink_connection(self) -> None:
@@ -68,6 +72,19 @@ class WeaselBot(commands.Bot):
             self._setup_lavalink(),
             name="weasel-lavalink-connect",
         )
+
+    async def _load_application_emojis(self) -> None:
+        if self._application_emojis_loaded:
+            return
+        self._application_emojis_loaded = True
+        try:
+            self.application_emoji_registry = await ApplicationEmojiRegistry.load(self)
+        except Exception as exc:  # noqa: BLE001 - startup should continue with fallbacks.
+            self.application_emoji_registry = ApplicationEmojiRegistry.empty()
+            LOGGER.warning(
+                "Application emoji registry fallback activated after %s.",
+                exc.__class__.__name__,
+            )
 
     async def _setup_lavalink(self) -> None:
         lavalink = self.settings.lavalink

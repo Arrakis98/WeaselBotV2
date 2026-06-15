@@ -9,14 +9,16 @@ import pytest
 
 from weasel_bot_v2.config import DatabaseConfig
 from weasel_bot_v2.database import SQLiteDatabase
-from weasel_bot_v2.models import Rating, Track, UserRecord
+from weasel_bot_v2.models import Rating, RatingCounts, Track, UserRecord
 from weasel_bot_v2.repositories import (
     RatingRepository,
     TrackRepository,
     TrackVolumeOverrideRepository,
     UserRepository,
 )
+from weasel_bot_v2.services.application_emojis import ApplicationEmojiRegistry
 from weasel_bot_v2.services.now_playing_panel import (
+    RATINGS_CENTER_PLACEHOLDER_CUSTOM_ID,
     ComponentsV2PanelRenderer,
     LegacyEmbedPanelRenderer,
     NowPlayingPanelRecord,
@@ -30,6 +32,7 @@ from weasel_bot_v2.services.now_playing_panel import (
     control_specs,
     detect_components_v2_support,
     detect_message_render_mode,
+    format_components_v2_rating_totals,
     format_queue,
     more_action_values,
     select_panel_renderer,
@@ -201,18 +204,19 @@ def test_emoji_only_controls_and_stable_custom_ids() -> None:
     assert "weasel:now_playing:queue" in ids
     assert "weasel:now_playing:shuffle" in ids
     assert "weasel:now_playing:more" in ids
+    assert RATINGS_CENTER_PLACEHOLDER_CUSTOM_ID in ids
     assert len(ids) == len(set(ids))
     labels = dict(zip((spec.key for spec in control_specs()), control_labels(), strict=True))
     emojis = dict(zip((spec.key for spec in control_specs()), control_emojis(), strict=True))
-    assert labels["volume_down"] == "−"
+    assert all(label is None for label in labels.values())
     assert emojis["volume_down"] == "🔉"
-    assert labels["volume_up"] == "+"
     assert emojis["volume_up"] == "🔊"
-    assert labels["more"] == "⋯"
-    assert emojis["more"] is None
+    assert emojis["more"] == "⋯"
+    assert emojis["shuffle"] == "🔀"
+    assert emojis["placeholder"] == "❔"
 
 
-def test_all_buttons_have_valid_identity_and_rows_respect_discord_limits() -> None:
+def test_public_main_grid_specs_match_required_3x5_layout() -> None:
     specs = control_specs()
     row_counts: dict[int, int] = {}
     for spec in specs:
@@ -220,16 +224,173 @@ def test_all_buttons_have_valid_identity_and_rows_respect_discord_limits() -> No
         assert spec.label or spec.emoji
         row_counts[spec.row] = row_counts.get(spec.row, 0) + 1
 
-    assert row_counts == {0: 5, 1: 5, 2: 4}
+    assert row_counts == {0: 5, 1: 5, 2: 5}
     assert all(count <= 5 for count in row_counts.values())
+    assert tuple(spec.key for spec in specs) == (
+        "previous",
+        "pause_resume",
+        "next",
+        "stop",
+        "loop",
+        "volume_down",
+        "volume_up",
+        "shuffle",
+        "queue",
+        "more",
+        "like",
+        "superlike",
+        "placeholder",
+        "dislike",
+        "superdislike",
+    )
+    assert sum(1 for spec in specs if spec.key != "placeholder") == 14
+    assert sum(1 for spec in specs if spec.key == "placeholder") == 1
+    assert specs[12].row == 2
+    assert specs[12].custom_id == RATINGS_CENTER_PLACEHOLDER_CUSTOM_ID
+    assert all(
+        spec.style is discord.ButtonStyle.secondary
+        for spec in specs
+        if spec.key != "placeholder"
+    )
+    assert all(spec.label is None for spec in specs)
 
 
 def test_declared_button_emojis_are_single_valid_emoji_fields() -> None:
-    invalid_fragments = ("+", "−", "⋯")
+    invalid_fragments = ("+", "−")
     for emoji in control_emojis():
         if emoji is None:
             continue
         assert all(fragment not in emoji for fragment in invalid_fragments)
+
+
+def test_public_components_v2_panel_renders_exactly_three_five_button_rows(
+    database: SQLiteDatabase,
+) -> None:
+    bot = _FakeBot(database)
+    guild = _FakeGuild(guild_id=123)
+    state = bot.player_states.get_or_create(123)
+    state.current_track = _indexed_track(database, "one.mp3")
+    state.upcoming = [
+        _indexed_track(database, "two.mp3"),
+        _indexed_track(database, "three.mp3"),
+    ]
+    snapshot = NowPlayingPanelService(bot).snapshot_for(guild)  # type: ignore[arg-type]
+
+    payload = ComponentsV2PanelRenderer().render(bot, snapshot)
+    rows = [
+        component
+        for component in payload.view.to_components()[0]["components"]
+        if component["type"] == 1
+    ]
+    button_rows = [[button["custom_id"] for button in row["components"]] for row in rows]
+
+    assert len(button_rows) == 3
+    assert all(len(row) == 5 for row in button_rows)
+    assert button_rows == [
+        [
+            "weasel:now_playing:back",
+            "weasel:now_playing:pause_resume",
+            "weasel:now_playing:skip",
+            "weasel:now_playing:stop",
+            "weasel:now_playing:loop",
+        ],
+        [
+            "weasel:now_playing:volume_down",
+            "weasel:now_playing:volume_up",
+            "weasel:now_playing:shuffle",
+            "weasel:now_playing:queue",
+            "weasel:now_playing:more",
+        ],
+        [
+            "weasel:now_playing:like",
+            "weasel:now_playing:superlike",
+            RATINGS_CENTER_PLACEHOLDER_CUSTOM_ID,
+            "weasel:now_playing:dislike",
+            "weasel:now_playing:superdislike",
+        ],
+    ]
+    buttons = [button for row in rows for button in row["components"]]
+    placeholder_buttons = [
+        button for button in buttons if button["custom_id"] == RATINGS_CENTER_PLACEHOLDER_CUSTOM_ID
+    ]
+    functional_buttons = [
+        button for button in buttons if button["custom_id"] != RATINGS_CENTER_PLACEHOLDER_CUSTOM_ID
+    ]
+    assert len(functional_buttons) == 14
+    assert len(placeholder_buttons) == 1
+    assert placeholder_buttons[0]["disabled"] is True
+    assert placeholder_buttons[0]["style"] == discord.ButtonStyle.secondary.value
+    assert placeholder_buttons[0]["emoji"]["name"] == "❔"
+    assert all("label" not in button for button in functional_buttons)
+    assert all(
+        button["style"] == discord.ButtonStyle.secondary.value
+        for button in functional_buttons
+    )
+    assert all("emoji" in button for button in functional_buttons)
+
+
+def test_public_rating_buttons_render_application_emojis(database: SQLiteDatabase) -> None:
+    bot = _FakeBot(database)
+    bot.application_emoji_registry = ApplicationEmojiRegistry(
+        {
+            "wg_like": discord.PartialEmoji(name="wg_like", id=101),
+            "wg_superlike": discord.PartialEmoji(name="wg_superlike", id=102),
+            "wg_dislike": discord.PartialEmoji(name="wg_dislike", id=103),
+            "wg_superdislike": discord.PartialEmoji(name="wg_superdislike", id=104),
+        }
+    )
+    guild = _FakeGuild(guild_id=123)
+    state = bot.player_states.get_or_create(123)
+    state.current_track = _indexed_track(database, "one.mp3")
+    snapshot = NowPlayingPanelService(bot).snapshot_for(guild)  # type: ignore[arg-type]
+
+    payload = ComponentsV2PanelRenderer().render(bot, snapshot)
+    rows = [
+        component
+        for component in payload.view.to_components()[0]["components"]
+        if component["type"] == 1
+    ]
+    rating_buttons = rows[2]["components"]
+
+    assert rating_buttons[0]["custom_id"] == "weasel:now_playing:like"
+    assert rating_buttons[0]["emoji"]["name"] == "wg_like"
+    assert rating_buttons[1]["custom_id"] == "weasel:now_playing:superlike"
+    assert rating_buttons[1]["emoji"]["name"] == "wg_superlike"
+    assert rating_buttons[3]["custom_id"] == "weasel:now_playing:dislike"
+    assert rating_buttons[3]["emoji"]["name"] == "wg_dislike"
+    assert rating_buttons[4]["custom_id"] == "weasel:now_playing:superdislike"
+    assert rating_buttons[4]["emoji"]["name"] == "wg_superdislike"
+
+
+def test_components_v2_rating_summary_uses_application_emojis_when_available() -> None:
+    bot = SimpleNamespace(
+        application_emoji_registry=ApplicationEmojiRegistry(
+            {
+                "wg_like": discord.PartialEmoji(name="wg_like", id=201),
+                "wg_superlike": discord.PartialEmoji(name="wg_superlike", id=202),
+                "wg_dislike": discord.PartialEmoji(name="wg_dislike", id=203),
+                "wg_superdislike": discord.PartialEmoji(name="wg_superdislike", id=204),
+            }
+        )
+    )
+    counts = RatingCounts(like=1, superlike=2, dislike=3, superdislike=4)
+
+    summary = format_components_v2_rating_totals(bot, counts)
+
+    assert summary == (
+        "<:wg_like:201> 1   "
+        "<:wg_superlike:202> 2   "
+        "<:wg_dislike:203> 3   "
+        "<:wg_superdislike:204> 4"
+    )
+
+
+def test_components_v2_rating_summary_retains_unicode_fallbacks() -> None:
+    counts = RatingCounts(like=5, superlike=6, dislike=7, superdislike=8)
+
+    summary = format_components_v2_rating_totals(SimpleNamespace(), counts)
+
+    assert summary == "❤️ 5   💎 6   👎 7   💀 8"
 
 
 def test_renderers_use_compatible_distinct_view_classes(database: SQLiteDatabase) -> None:
@@ -612,6 +773,7 @@ class _FakeBot:
         self.lavalink_available = True
         self.settings = SimpleNamespace(bot=SimpleNamespace(music_library=Path("/music")))
         self.channels: dict[int, _FakeChannel] = {}
+        self.application_emoji_registry = ApplicationEmojiRegistry.empty()
 
     def get_channel(self, channel_id: int) -> _FakeChannel | None:
         return self.channels.get(channel_id)

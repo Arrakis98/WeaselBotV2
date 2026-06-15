@@ -44,6 +44,9 @@ Initial schema bootstrap creates:
 - `ratings`
 - `track_volume_overrides`
 - `track_quarantine`
+- `play_all_artist_exclusions`
+- `play_all_track_exceptions`
+- `play_all_policy`
 - `playlists`
 - `playlist_items`
 
@@ -125,6 +128,20 @@ planned for later phases.
 filters to tracks whose indexed extension is `.mp3`, shuffles them, starts the
 first track when idle, and appends the remaining tracks to the upcoming queue.
 Non-MP3 indexed files are intentionally ignored by `/play_all` for now.
+
+`/play_all` also applies an optional guild-wide artist exclusion policy through
+`PlayAllPolicyService`. The service loads indexed available MP3 tracks, then
+applies stored artist exclusions, stored track exceptions, and the guild's
+strict-mode boolean in one application-layer pass. With strict mode disabled,
+valid exception tracks remain eligible even when their artist is excluded. With
+strict mode enabled, exceptions remain stored but are ignored. Unavailable or
+quarantined tracks are filtered before the policy can re-allow anything.
+
+The policy affects only newly generated `/play_all` selections. It does not
+change `/play_local`, `/search_local`, direct track playback, manual queue
+additions, existing queue contents, current playback, ratings, quarantine
+administration, restoration, or future playlist behavior. Policy changes never
+retroactively remove tracks already queued.
 
 Phase 5.0 stores one active user rating per local track and guild. Users can set
 Like, SuperLike, Dislike, or SuperDislike from slash commands or the Now Playing
