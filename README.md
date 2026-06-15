@@ -197,6 +197,7 @@ artists, resolves names case-insensitively and accent-insensitively against
 currently indexed available artists, and fails without queue mutation when an
 artist is unknown or ambiguous. Stored exceptions remain persistent per guild
 and can be managed with the current-track More Actions toggle or
+the main control grid's current-track exception button, or
 `/playall_exception track:<search> enabled:true|false`. Quarantined,
 unavailable, missing, invalid, and non-MP3 tracks remain ineligible regardless
 of exception records. `/play_local`, `/search_local`, current playback, existing

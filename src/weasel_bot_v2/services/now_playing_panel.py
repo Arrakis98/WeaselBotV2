@@ -15,6 +15,13 @@ from weasel_bot_v2.models import RatingCounts, Track
 from weasel_bot_v2.repositories import RatingRepository, UserRepository
 from weasel_bot_v2.services.application_emojis import ApplicationEmojiRegistry
 from weasel_bot_v2.services.audio import AudioPlaybackService, PlaybackResult
+from weasel_bot_v2.services.play_all_exception_controls import (
+    PLAY_ALL_EXCEPTION_PERMISSION_ERROR,
+    can_manage_play_all_exceptions,
+    play_all_exception_button_disabled,
+    resolve_play_all_exception_emoji,
+    toggle_current_play_all_exception,
+)
 from weasel_bot_v2.services.player_actions import PlayerActionService
 from weasel_bot_v2.services.player_state import VOLUME_STEP, GuildPlayerState
 from weasel_bot_v2.services.ratings import RatingService
@@ -24,7 +31,7 @@ LOGGER = logging.getLogger(__name__)
 WEASEL_GALAXY_ACCENT = 0xC026D3
 UNKNOWN_ARTIST = "Divers"
 QUEUE_PREVIEW_LIMIT = 10
-RATINGS_CENTER_PLACEHOLDER_CUSTOM_ID = "weasel:placeholder:ratings-center"
+PLAY_ALL_EXCEPTION_CONTROL_CUSTOM_ID = "weasel:now_playing:playall_exception"
 
 
 class PanelRenderMode(StrEnum):
@@ -212,9 +219,9 @@ PLAYER_CONTROL_SPECS: tuple[ControlSpec, ...] = (
         discord.ButtonStyle.secondary,
     ),
     ControlSpec(
-        "placeholder",
-        RATINGS_CENTER_PLACEHOLDER_CUSTOM_ID,
-        "❔",
+        "toggle_playall_exception",
+        PLAY_ALL_EXCEPTION_CONTROL_CUSTOM_ID,
+        "➕",
         None,
         2,
         discord.ButtonStyle.secondary,
@@ -601,6 +608,36 @@ class NowPlayingPanelService:
 
         await send_ephemeral_once(interaction, result.message)
 
+    async def run_play_all_exception_action(self, interaction: discord.Interaction) -> None:
+        await acknowledge_interaction(interaction)
+        guild = interaction.guild
+        if guild is None:
+            await send_ephemeral_once(interaction, "This control can only be used in a server.")
+            return
+        if not await can_manage_play_all_exceptions(self.bot, interaction):
+            await send_ephemeral_once(interaction, PLAY_ALL_EXCEPTION_PERMISSION_ERROR)
+            return
+
+        async with self.lock_for(guild.id):
+            await self.disable_stale_interaction_panel(interaction)
+            state = self.bot.player_states.get(guild.id)
+            track = state.current_track if state is not None else None
+            result = toggle_current_play_all_exception(
+                self.bot,
+                guild_id=guild.id,
+                user_id=interaction.user.id,
+                display_name=getattr(interaction.user, "display_name", None),
+                track=track,
+            )
+            if result.ok:
+                await self.refresh_locked(
+                    guild=guild,
+                    channel=cast(discord.abc.Messageable | None, interaction.channel),
+                    reason="button:playall_exception",
+                )
+
+        await send_ephemeral_once(interaction, result.message)
+
     async def show_queue(self, interaction: discord.Interaction) -> None:
         await acknowledge_interaction(interaction)
         guild = interaction.guild
@@ -923,7 +960,25 @@ class PanelControlButton(discord.ui.Button[Any]):
             disabled = False
         if spec.key == "shuffle":
             disabled = snapshot.queue_length <= 1
-        emoji = resolve_control_emoji(bot, spec.key, snapshot, fallback=spec.emoji)
+        state = bot.player_states.get(snapshot.guild_id) if bot is not None else None
+        track = state.current_track if state is not None else None
+        if spec.key == "toggle_playall_exception":
+            disabled = (
+                True
+                if bot is None
+                else play_all_exception_button_disabled(
+                    bot,
+                    guild_id=snapshot.guild_id,
+                    track=track,
+                )
+            )
+            emoji = resolve_play_all_exception_emoji(
+                bot,
+                guild_id=snapshot.guild_id,
+                track=track,
+            )
+        else:
+            emoji = resolve_control_emoji(bot, spec.key, snapshot, fallback=spec.emoji)
         super().__init__(
             style=spec.style,
             label=spec.label,
@@ -983,18 +1038,8 @@ class PanelControlButton(discord.ui.Button[Any]):
                 await service.show_more_actions(interaction)
             case "like" | "superlike" | "dislike" | "superdislike":
                 await service.run_rating_action(interaction, self.spec.key)
-
-
-class PlaceholderControlButton(discord.ui.Button[Any]):
-    def __init__(self, spec: ControlSpec) -> None:
-        super().__init__(
-            style=discord.ButtonStyle.secondary,
-            label=None,
-            emoji=spec.emoji,
-            disabled=True,
-            custom_id=spec.custom_id,
-        )
-        self.spec = spec
+            case "toggle_playall_exception":
+                await service.run_play_all_exception_action(interaction)
 
 
 class MoreActionsSelect(discord.ui.Select[Any]):
@@ -1046,8 +1091,6 @@ def build_control_button(
     snapshot: NowPlayingSnapshot,
     bot: Any | None = None,
 ) -> discord.ui.Button[Any]:
-    if spec.key == "placeholder":
-        return PlaceholderControlButton(spec)
     return PanelControlButton(bot, spec, snapshot)
 
 

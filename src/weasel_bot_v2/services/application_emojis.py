@@ -29,6 +29,11 @@ APPLICATION_EMOJI_NAMES: tuple[str, ...] = (
     "wg_volume_down",
 )
 
+OPTIONAL_APPLICATION_EMOJI_NAMES: tuple[str, ...] = (
+    "wg_exception_add",
+    "wg_exception_remove",
+)
+
 APPLICATION_EMOJI_ASSETS: dict[str, str] = {
     "wg_back": "wg_back.png",
     "wg_dislike": "wg_dislike.png",
@@ -60,6 +65,8 @@ BUTTON_EMOJI_MAP: dict[str, tuple[str | None, str | None]] = {
     "superlike": ("wg_superlike", "💎"),
     "dislike": ("wg_dislike", "👎"),
     "superdislike": ("wg_superdislike", "💀"),
+    "playall_exception_add": ("wg_exception_add", "➕"),
+    "playall_exception_remove": ("wg_exception_remove", "➖"),
 }
 
 LOOP_BUTTON_EMOJIS: dict[bool, tuple[str, str]] = {
@@ -279,7 +286,7 @@ class ApplicationEmojiRegistry:
         mapping: dict[str, discord.PartialEmoji] = {}
         for emoji in emojis:
             name = getattr(emoji, "name", None)
-            if name in APPLICATION_EMOJI_NAMES:
+            if name in APPLICATION_EMOJI_NAMES or name in OPTIONAL_APPLICATION_EMOJI_NAMES:
                 mapping[name] = emoji._to_partial()
         missing = sorted(set(APPLICATION_EMOJI_NAMES) - set(mapping))
         if missing:

@@ -11,6 +11,7 @@ from weasel_bot_v2.config import DatabaseConfig
 from weasel_bot_v2.database import SQLiteDatabase
 from weasel_bot_v2.models import Rating, RatingCounts, Track, UserRecord
 from weasel_bot_v2.repositories import (
+    PlayAllPolicyRepository,
     RatingRepository,
     TrackRepository,
     TrackVolumeOverrideRepository,
@@ -18,9 +19,10 @@ from weasel_bot_v2.repositories import (
 )
 from weasel_bot_v2.services.application_emojis import ApplicationEmojiRegistry
 from weasel_bot_v2.services.now_playing_panel import (
-    RATINGS_CENTER_PLACEHOLDER_CUSTOM_ID,
+    PLAY_ALL_EXCEPTION_CONTROL_CUSTOM_ID,
     ComponentsV2PanelRenderer,
     LegacyEmbedPanelRenderer,
+    NowPlayingLegacyView,
     NowPlayingPanelRecord,
     NowPlayingPanelRegistry,
     NowPlayingPanelService,
@@ -204,7 +206,8 @@ def test_emoji_only_controls_and_stable_custom_ids() -> None:
     assert "weasel:now_playing:queue" in ids
     assert "weasel:now_playing:shuffle" in ids
     assert "weasel:now_playing:more" in ids
-    assert RATINGS_CENTER_PLACEHOLDER_CUSTOM_ID in ids
+    assert PLAY_ALL_EXCEPTION_CONTROL_CUSTOM_ID in ids
+    assert "weasel:placeholder:ratings-center" not in ids
     assert len(ids) == len(set(ids))
     labels = dict(zip((spec.key for spec in control_specs()), control_labels(), strict=True))
     emojis = dict(zip((spec.key for spec in control_specs()), control_emojis(), strict=True))
@@ -213,7 +216,7 @@ def test_emoji_only_controls_and_stable_custom_ids() -> None:
     assert emojis["volume_up"] == "🔊"
     assert emojis["more"] == "⋯"
     assert emojis["shuffle"] == "🔀"
-    assert emojis["placeholder"] == "❔"
+    assert emojis["toggle_playall_exception"] == "➕"
 
 
 def test_public_main_grid_specs_match_required_3x5_layout() -> None:
@@ -239,19 +242,14 @@ def test_public_main_grid_specs_match_required_3x5_layout() -> None:
         "more",
         "like",
         "superlike",
-        "placeholder",
+        "toggle_playall_exception",
         "dislike",
         "superdislike",
     )
-    assert sum(1 for spec in specs if spec.key != "placeholder") == 14
-    assert sum(1 for spec in specs if spec.key == "placeholder") == 1
+    assert sum(1 for spec in specs if spec.key == "toggle_playall_exception") == 1
     assert specs[12].row == 2
-    assert specs[12].custom_id == RATINGS_CENTER_PLACEHOLDER_CUSTOM_ID
-    assert all(
-        spec.style is discord.ButtonStyle.secondary
-        for spec in specs
-        if spec.key != "placeholder"
-    )
+    assert specs[12].custom_id == PLAY_ALL_EXCEPTION_CONTROL_CUSTOM_ID
+    assert all(spec.style is discord.ButtonStyle.secondary for spec in specs)
     assert all(spec.label is None for spec in specs)
 
 
@@ -304,29 +302,23 @@ def test_public_components_v2_panel_renders_exactly_three_five_button_rows(
         [
             "weasel:now_playing:like",
             "weasel:now_playing:superlike",
-            RATINGS_CENTER_PLACEHOLDER_CUSTOM_ID,
+            PLAY_ALL_EXCEPTION_CONTROL_CUSTOM_ID,
             "weasel:now_playing:dislike",
             "weasel:now_playing:superdislike",
         ],
     ]
     buttons = [button for row in rows for button in row["components"]]
-    placeholder_buttons = [
-        button for button in buttons if button["custom_id"] == RATINGS_CENTER_PLACEHOLDER_CUSTOM_ID
+    exception_buttons = [
+        button for button in buttons if button["custom_id"] == PLAY_ALL_EXCEPTION_CONTROL_CUSTOM_ID
     ]
-    functional_buttons = [
-        button for button in buttons if button["custom_id"] != RATINGS_CENTER_PLACEHOLDER_CUSTOM_ID
-    ]
-    assert len(functional_buttons) == 14
-    assert len(placeholder_buttons) == 1
-    assert placeholder_buttons[0]["disabled"] is True
-    assert placeholder_buttons[0]["style"] == discord.ButtonStyle.secondary.value
-    assert placeholder_buttons[0]["emoji"]["name"] == "❔"
-    assert all("label" not in button for button in functional_buttons)
-    assert all(
-        button["style"] == discord.ButtonStyle.secondary.value
-        for button in functional_buttons
-    )
-    assert all("emoji" in button for button in functional_buttons)
+    assert len(buttons) == 15
+    assert len(exception_buttons) == 1
+    assert exception_buttons[0]["disabled"] is False
+    assert exception_buttons[0]["style"] == discord.ButtonStyle.secondary.value
+    assert exception_buttons[0]["emoji"]["name"] == "➕"
+    assert all("label" not in button for button in buttons)
+    assert all(button["style"] == discord.ButtonStyle.secondary.value for button in buttons)
+    assert all("emoji" in button for button in buttons)
 
 
 def test_public_rating_buttons_render_application_emojis(database: SQLiteDatabase) -> None:
@@ -360,6 +352,171 @@ def test_public_rating_buttons_render_application_emojis(database: SQLiteDatabas
     assert rating_buttons[3]["emoji"]["name"] == "wg_dislike"
     assert rating_buttons[4]["custom_id"] == "weasel:now_playing:superdislike"
     assert rating_buttons[4]["emoji"]["name"] == "wg_superdislike"
+
+
+def test_public_exception_button_resolves_add_and_remove_visuals(
+    database: SQLiteDatabase,
+) -> None:
+    bot = _FakeBot(database)
+    bot.application_emoji_registry = ApplicationEmojiRegistry(
+        {
+            "wg_exception_add": discord.PartialEmoji(name="wg_exception_add", id=401),
+            "wg_exception_remove": discord.PartialEmoji(name="wg_exception_remove", id=402),
+        }
+    )
+    guild = _FakeGuild(guild_id=123)
+    current = _indexed_track(database, "Artist/current.mp3")
+    assert current.id is not None
+    bot.player_states.get_or_create(123).current_track = current
+
+    add_snapshot = NowPlayingPanelService(bot).snapshot_for(guild)  # type: ignore[arg-type]
+    add_payload = ComponentsV2PanelRenderer().render(bot, add_snapshot)
+    add_button = _component_button(add_payload, PLAY_ALL_EXCEPTION_CONTROL_CUSTOM_ID)
+
+    _store_exception(database, track_id=current.id)
+    remove_snapshot = NowPlayingPanelService(bot).snapshot_for(guild)  # type: ignore[arg-type]
+    remove_payload = ComponentsV2PanelRenderer().render(bot, remove_snapshot)
+    remove_button = _component_button(remove_payload, PLAY_ALL_EXCEPTION_CONTROL_CUSTOM_ID)
+
+    assert add_button["emoji"]["name"] == "wg_exception_add"
+    assert remove_button["emoji"]["name"] == "wg_exception_remove"
+
+
+def test_public_exception_button_uses_unicode_fallbacks(database: SQLiteDatabase) -> None:
+    bot = _FakeBot(database)
+    guild = _FakeGuild(guild_id=123)
+    current = _indexed_track(database, "Artist/current.mp3")
+    assert current.id is not None
+    bot.player_states.get_or_create(123).current_track = current
+
+    add_snapshot = NowPlayingPanelService(bot).snapshot_for(guild)  # type: ignore[arg-type]
+    add_payload = ComponentsV2PanelRenderer().render(bot, add_snapshot)
+    add_button = _component_button(add_payload, PLAY_ALL_EXCEPTION_CONTROL_CUSTOM_ID)
+
+    _store_exception(database, track_id=current.id)
+    remove_snapshot = NowPlayingPanelService(bot).snapshot_for(guild)  # type: ignore[arg-type]
+    remove_payload = ComponentsV2PanelRenderer().render(bot, remove_snapshot)
+    remove_button = _component_button(remove_payload, PLAY_ALL_EXCEPTION_CONTROL_CUSTOM_ID)
+
+    assert add_button["emoji"]["name"] == "➕"
+    assert remove_button["emoji"]["name"] == "➖"
+
+
+def test_public_exception_button_disables_without_safe_current_track(
+    database: SQLiteDatabase,
+) -> None:
+    bot = _FakeBot(database)
+    guild = _FakeGuild(guild_id=123)
+
+    idle_snapshot = NowPlayingPanelService(bot).snapshot_for(guild)  # type: ignore[arg-type]
+    idle_payload = ComponentsV2PanelRenderer().render(bot, idle_snapshot)
+
+    unavailable = _indexed_track(database, "Artist/unavailable.mp3")
+    unavailable = TrackRepository(database).upsert(
+        Track(
+            **{
+                **unavailable.__dict__,
+                "is_available": False,
+            }
+        )
+    )
+    bot.player_states.get_or_create(123).current_track = unavailable
+    unavailable_snapshot = NowPlayingPanelService(bot).snapshot_for(guild)  # type: ignore[arg-type]
+    unavailable_payload = ComponentsV2PanelRenderer().render(bot, unavailable_snapshot)
+
+    non_local = Track(source="web", source_id="https://example.test/track", display_title="remote")
+    bot.player_states.get_or_create(123).current_track = non_local
+    non_local_snapshot = NowPlayingPanelService(bot).snapshot_for(guild)  # type: ignore[arg-type]
+    non_local_payload = ComponentsV2PanelRenderer().render(bot, non_local_snapshot)
+
+    assert _component_button(idle_payload, PLAY_ALL_EXCEPTION_CONTROL_CUSTOM_ID)["disabled"] is True
+    assert (
+        _component_button(unavailable_payload, PLAY_ALL_EXCEPTION_CONTROL_CUSTOM_ID)["disabled"]
+        is True
+    )
+    assert (
+        _component_button(non_local_payload, PLAY_ALL_EXCEPTION_CONTROL_CUSTOM_ID)["disabled"]
+        is True
+    )
+
+
+@pytest.mark.asyncio
+async def test_public_exception_button_toggles_policy_and_refreshes_panel(
+    database: SQLiteDatabase,
+) -> None:
+    bot = _FakeBot(database)
+    guild = _FakeGuild(guild_id=123)
+    channel = _FakeChannel(channel_id=10)
+    bot.channels[10] = channel
+    current = _indexed_track(database, "Artist/current.mp3")
+    assert current.id is not None
+    state = bot.player_states.get_or_create(123)
+    state.current_track = current
+    player = _FakePlayerStateSentinel()
+    guild.voice_client = player
+    public_message = await channel.send(view=discord.ui.View())
+    bot.now_playing_panels.set(NowPlayingPanelRecord(123, 10, public_message.id))
+    snapshot = NowPlayingPanelService(bot).snapshot_for(guild)  # type: ignore[arg-type]
+    view = NowPlayingLegacyView(bot, snapshot)
+    button = _view_button(view, PLAY_ALL_EXCEPTION_CONTROL_CUSTOM_ID)
+    interaction = _FakeInteraction(guild=guild, channel=channel)
+
+    await button.callback(interaction)  # type: ignore[misc]
+
+    assert PlayAllPolicyRepository(database).has_track_exception(
+        guild_id=123,
+        track_id=current.id,
+    )
+    assert public_message.edit_count == 1
+    assert interaction.followup_ephemeral == [True]
+    assert "Added exception" in interaction.followup_messages[0]
+    assert player.actions == []
+    refreshed_button = _component_button(
+        SimpleNamespace(view=public_message.last_view),
+        PLAY_ALL_EXCEPTION_CONTROL_CUSTOM_ID,
+    )
+    assert refreshed_button["emoji"]["name"] == "➖"
+
+    second = _FakeInteraction(guild=guild, channel=channel)
+    second_snapshot = NowPlayingPanelService(bot).snapshot_for(guild)  # type: ignore[arg-type]
+    second_view = NowPlayingLegacyView(bot, second_snapshot)
+    second_button = _view_button(second_view, PLAY_ALL_EXCEPTION_CONTROL_CUSTOM_ID)
+    await second_button.callback(second)  # type: ignore[misc]
+
+    assert not PlayAllPolicyRepository(database).has_track_exception(
+        guild_id=123,
+        track_id=current.id,
+    )
+    assert public_message.edit_count == 2
+    assert "Removed exception" in second.followup_messages[0]
+
+
+@pytest.mark.asyncio
+async def test_public_exception_button_rejects_unauthorized_without_refresh(
+    database: SQLiteDatabase,
+) -> None:
+    bot = _FakeBot(database)
+    guild = _FakeGuild(guild_id=123)
+    channel = _FakeChannel(channel_id=10)
+    bot.channels[10] = channel
+    current = _indexed_track(database, "Artist/current.mp3")
+    assert current.id is not None
+    bot.player_states.get_or_create(123).current_track = current
+    public_message = await channel.send(view=discord.ui.View())
+    bot.now_playing_panels.set(NowPlayingPanelRecord(123, 10, public_message.id))
+    snapshot = NowPlayingPanelService(bot).snapshot_for(guild)  # type: ignore[arg-type]
+    view = NowPlayingLegacyView(bot, snapshot)
+    button = _view_button(view, PLAY_ALL_EXCEPTION_CONTROL_CUSTOM_ID)
+    interaction = _FakeInteraction(guild=guild, channel=channel, administrator=False)
+
+    await button.callback(interaction)  # type: ignore[misc]
+
+    assert not PlayAllPolicyRepository(database).has_track_exception(
+        guild_id=123,
+        track_id=current.id,
+    )
+    assert public_message.edit_count == 0
+    assert "Only an administrator" in interaction.followup_messages[0]
 
 
 def test_components_v2_rating_summary_uses_application_emojis_when_available() -> None:
@@ -758,6 +915,32 @@ def _indexed_track(database: SQLiteDatabase, relative_path: str) -> Track:
     )
 
 
+def _component_button(payload: Any, custom_id: str) -> dict[str, Any]:
+    for component in payload.view.to_components()[0]["components"]:
+        if component["type"] != 1:
+            continue
+        for button in component["components"]:
+            if button.get("custom_id") == custom_id:
+                return button
+    raise AssertionError(f"Button not found: {custom_id}")
+
+
+def _store_exception(database: SQLiteDatabase, *, track_id: int) -> None:
+    UserRepository(database).upsert(UserRecord(user_id=42, display_name="Listener"))
+    PlayAllPolicyRepository(database).add_track_exception(
+        guild_id=123,
+        track_id=track_id,
+        created_by_user_id=42,
+    )
+
+
+def _view_button(view: Any, custom_id: str) -> discord.ui.Button[Any]:
+    for child in view.children:
+        if isinstance(child, discord.ui.Button) and child.custom_id == custom_id:
+            return child
+    raise AssertionError(f"Button not found: {custom_id}")
+
+
 def _field_value(embed: discord.Embed, name: str) -> str | None:
     for field in embed.fields:
         if field.name == name:
@@ -777,6 +960,9 @@ class _FakeBot:
 
     def get_channel(self, channel_id: int) -> _FakeChannel | None:
         return self.channels.get(channel_id)
+
+    async def application_info(self) -> Any:
+        return SimpleNamespace(owner=SimpleNamespace(id=999))
 
 
 class _FakeGuild:
@@ -860,6 +1046,65 @@ class _FakeMessage:
     async def delete(self) -> None:
         self.deleted = True
         self.channel.deleted_message_ids.add(self.id)
+
+
+class _FakeInteraction:
+    def __init__(
+        self,
+        *,
+        guild: _FakeGuild,
+        channel: _FakeChannel,
+        administrator: bool = True,
+    ) -> None:
+        self.guild = guild
+        self.channel = channel
+        self.user = SimpleNamespace(
+            id=42,
+            display_name="Listener",
+            guild_permissions=SimpleNamespace(administrator=administrator),
+        )
+        self.response = _FakeResponse(self)
+        self.followup = _FakeFollowup(self)
+        self.message = None
+        self.deferred_public = False
+        self.followup_messages: list[str] = []
+        self.followup_ephemeral: list[bool] = []
+
+
+class _FakeResponse:
+    def __init__(self, interaction: _FakeInteraction) -> None:
+        self.interaction = interaction
+        self._done = False
+
+    def is_done(self) -> bool:
+        return self._done
+
+    async def defer(self, *, ephemeral: bool = False, thinking: bool = False) -> None:
+        self._done = True
+        self.interaction.deferred_public = not ephemeral
+
+
+class _FakeFollowup:
+    def __init__(self, interaction: _FakeInteraction) -> None:
+        self.interaction = interaction
+
+    async def send(self, message: str, *, ephemeral: bool = False) -> None:
+        self.interaction.followup_messages.append(message)
+        self.interaction.followup_ephemeral.append(ephemeral)
+
+
+class _FakePlayerStateSentinel:
+    def __init__(self) -> None:
+        self.actions: list[str] = []
+
+    async def stop(self) -> None:
+        self.actions.append("stop")
+
+    async def disconnect(self) -> None:
+        self.actions.append("disconnect")
+
+    async def set_volume(self, volume: int) -> None:
+        self.actions.append(f"volume:{volume}")
 
 
 class _BareMessage:

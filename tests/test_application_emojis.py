@@ -14,13 +14,14 @@ from weasel_bot_v2.repositories import TrackRepository
 from weasel_bot_v2.services.application_emojis import (
     APPLICATION_EMOJI_ASSETS,
     APPLICATION_EMOJI_NAMES,
+    OPTIONAL_APPLICATION_EMOJI_NAMES,
     ApplicationEmojiRegistry,
     sync_application_emojis,
     validate_application_emoji_assets,
 )
 from weasel_bot_v2.services.control_center import ControlCenterView, control_center_custom_ids
 from weasel_bot_v2.services.now_playing_panel import (
-    RATINGS_CENTER_PLACEHOLDER_CUSTOM_ID,
+    PLAY_ALL_EXCEPTION_CONTROL_CUSTOM_ID,
     NowPlayingPanelRegistry,
     NowPlayingPanelService,
     build_control_button,
@@ -359,8 +360,12 @@ def test_main_grid_application_emoji_mapping_is_exact() -> None:
             for index, name in enumerate(EXPECTED_EMOJI_NAMES, start=1)
         }
     )
-    bot = SimpleNamespace(application_emoji_registry=registry)
+    bot = SimpleNamespace(
+        application_emoji_registry=registry,
+        player_states=PlayerStateStore(),
+    )
     snapshot = SimpleNamespace(
+        guild_id=123,
         status="Playing",
         loop_enabled=False,
         has_track=True,
@@ -387,11 +392,20 @@ def test_main_grid_application_emoji_mapping_is_exact() -> None:
 
     for spec in control_specs():
         button = build_control_button(spec, cast(Any, snapshot), bot)
-        if spec.key == "placeholder":
-            assert str(button.emoji) == "❔"
+        if spec.key == "toggle_playall_exception":
+            assert str(button.emoji) == "➕"
             continue
         assert isinstance(button.emoji, discord.PartialEmoji)
         assert button.emoji.name == expected[spec.key]
+
+
+def test_optional_exception_emojis_are_not_mandatory_sync_assets() -> None:
+    assert "wg_exception_add" in OPTIONAL_APPLICATION_EMOJI_NAMES
+    assert "wg_exception_remove" in OPTIONAL_APPLICATION_EMOJI_NAMES
+    assert "wg_exception_add" not in APPLICATION_EMOJI_NAMES
+    assert "wg_exception_remove" not in APPLICATION_EMOJI_NAMES
+    assert "wg_exception_add" not in APPLICATION_EMOJI_ASSETS
+    assert "wg_exception_remove" not in APPLICATION_EMOJI_ASSETS
 
 
 def test_missing_application_emoji_uses_unicode_fallback() -> None:
@@ -422,7 +436,7 @@ def test_visual_mapping_does_not_change_ids_order_rows_or_labels() -> None:
         "weasel:now_playing:more",
         "weasel:now_playing:like",
         "weasel:now_playing:superlike",
-        RATINGS_CENTER_PLACEHOLDER_CUSTOM_ID,
+        PLAY_ALL_EXCEPTION_CONTROL_CUSTOM_ID,
         "weasel:now_playing:dislike",
         "weasel:now_playing:superdislike",
     )
@@ -444,11 +458,7 @@ def test_visual_mapping_does_not_change_ids_order_rows_or_labels() -> None:
         2,
     )
     assert tuple(spec.label for spec in control_specs()) == (None,) * 15
-    assert all(
-        spec.style is discord.ButtonStyle.secondary
-        for spec in control_specs()
-        if spec.key != "placeholder"
-    )
+    assert all(spec.style is discord.ButtonStyle.secondary for spec in control_specs())
     assert control_center_custom_ids() == (
         "weasel:controls:back",
         "weasel:controls:pause_resume",
@@ -462,7 +472,7 @@ def test_visual_mapping_does_not_change_ids_order_rows_or_labels() -> None:
         "weasel:controls:more",
         "weasel:controls:like",
         "weasel:controls:superlike",
-        RATINGS_CENTER_PLACEHOLDER_CUSTOM_ID,
+        "weasel:controls:playall_exception",
         "weasel:controls:dislike",
         "weasel:controls:superdislike",
         "weasel:controls:open",

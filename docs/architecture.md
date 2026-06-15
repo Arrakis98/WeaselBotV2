@@ -145,7 +145,8 @@ additions, existing queue contents, current playback, ratings, quarantine
 administration, restoration, or future playlist behavior. Invocation exclusions
 are never persisted and never retroactively remove tracks already queued.
 Persistent track exceptions are stored in `play_all_track_exceptions` and are
-managed by the current-track More Actions toggle or `/playall_exception`. The
+managed by the main control grid's current-track exception button, the
+current-track More Actions toggle, or `/playall_exception`. The
 legacy `play_all_artist_exclusions` and `play_all_policy` tables remain in the
 schema for backward compatibility and possible future presets, but they are not
 the current Discord-facing artist exclusion UI.

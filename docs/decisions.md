@@ -260,8 +260,9 @@ those artists remain excluded for that run. Unavailable, quarantined, missing,
 invalid, and non-MP3 tracks remain ineligible even when an exception record
 exists.
 
-Exception management is exposed through the personal More Actions current-track
-toggle and `/playall_exception track:<search> enabled:true|false`, both
+Exception management is exposed through the main control grid current-track
+button, the personal More Actions current-track toggle, and
+`/playall_exception track:<search> enabled:true|false`; all mutation paths are
 administrator/owner restricted. The legacy `play_all_artist_exclusions` and
 `play_all_policy` tables remain in SQLite for backward compatibility and
 possible future presets, but their old Discord policy-management commands are no

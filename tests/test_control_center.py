@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
@@ -27,11 +28,7 @@ from weasel_bot_v2.services.control_center import (
     OpenControlPanelView,
     control_center_custom_ids,
 )
-from weasel_bot_v2.services.now_playing_panel import (
-    RATINGS_CENTER_PLACEHOLDER_CUSTOM_ID,
-    NowPlayingPanelRecord,
-    NowPlayingPanelRegistry,
-)
+from weasel_bot_v2.services.now_playing_panel import NowPlayingPanelRecord, NowPlayingPanelRegistry
 from weasel_bot_v2.services.player_state import PlayerStateStore
 
 
@@ -97,7 +94,7 @@ def test_idle_control_center_disables_unavailable_controls(database: SQLiteDatab
     assert enabled_ids == ["weasel:controls:queue", "weasel:controls:more"]
     assert "weasel:controls:skip" in disabled_ids
     assert "weasel:controls:like" in disabled_ids
-    assert RATINGS_CENTER_PLACEHOLDER_CUSTOM_ID in disabled_ids
+    assert "weasel:controls:playall_exception" in disabled_ids
 
 
 @pytest.mark.asyncio
@@ -233,11 +230,7 @@ def test_more_actions_show_add_or_remove_play_all_exception(database: SQLiteData
     add_view = AdvancedActionsView(bot, snapshot)
     add_labels = _button_labels(add_view)
     UserRepository(database).upsert(UserRecord(user_id=42, display_name="Listener"))
-    PlayAllPolicyRepository(database).add_track_exception(
-        guild_id=123,
-        track_id=current.id,
-        created_by_user_id=42,
-    )
+    _store_exception(database, track_id=current.id)
     remove_view = AdvancedActionsView(bot, snapshot)
     remove_labels = _button_labels(remove_view)
 
@@ -479,7 +472,8 @@ def test_control_center_custom_ids_are_stable_and_unique() -> None:
     ids = control_center_custom_ids()
 
     assert "weasel:controls:open" in ids
-    assert RATINGS_CENTER_PLACEHOLDER_CUSTOM_ID in ids
+    assert "weasel:controls:playall_exception" in ids
+    assert "weasel:placeholder:ratings-center" not in ids
     assert "weasel:controls:reset_volume" not in ids
     assert "weasel:controls:advanced:reset_volume" not in ids
     assert len(ids) == len(set(ids))
@@ -523,26 +517,23 @@ def test_control_center_main_grid_matches_required_3x5_layout(database: SQLiteDa
         [
             "weasel:controls:like",
             "weasel:controls:superlike",
-            RATINGS_CENTER_PLACEHOLDER_CUSTOM_ID,
+            "weasel:controls:playall_exception",
             "weasel:controls:dislike",
             "weasel:controls:superdislike",
         ],
     ]
     buttons = [button for row in rows for button in row]
-    functional = [
-        button for button in buttons if button.custom_id != RATINGS_CENTER_PLACEHOLDER_CUSTOM_ID
+    exception = [
+        button for button in buttons if button.custom_id == "weasel:controls:playall_exception"
     ]
-    placeholder = [
-        button for button in buttons if button.custom_id == RATINGS_CENTER_PLACEHOLDER_CUSTOM_ID
-    ]
-    assert len(functional) == 14
-    assert len(placeholder) == 1
-    assert placeholder[0].disabled is True
-    assert placeholder[0].emoji is not None
-    assert str(placeholder[0].emoji) == "❔"
-    assert all(button.label is None for button in functional)
-    assert all(button.style is discord.ButtonStyle.secondary for button in functional)
-    assert all(button.emoji is not None for button in functional)
+    assert len(buttons) == 15
+    assert len(exception) == 1
+    assert exception[0].disabled is False
+    assert exception[0].emoji is not None
+    assert str(exception[0].emoji) == "➕"
+    assert all(button.label is None for button in buttons)
+    assert all(button.style is discord.ButtonStyle.secondary for button in buttons)
+    assert all(button.emoji is not None for button in buttons)
 
 
 def test_control_center_rating_buttons_use_application_emojis(database: SQLiteDatabase) -> None:
@@ -577,6 +568,152 @@ def test_control_center_rating_buttons_use_application_emojis(database: SQLiteDa
     assert str(buttons["weasel:controls:superdislike"].emoji) == "<:wg_superdislike:304>"
 
 
+def test_control_center_exception_button_resolves_add_and_remove_visuals(
+    database: SQLiteDatabase,
+) -> None:
+    bot = _FakeBot(database)
+    bot.application_emoji_registry = ApplicationEmojiRegistry(
+        {
+            "wg_exception_add": discord.PartialEmoji(name="wg_exception_add", id=501),
+            "wg_exception_remove": discord.PartialEmoji(name="wg_exception_remove", id=502),
+        }
+    )
+    guild = _FakeGuild(guild_id=123, voice_client=None)
+    current = _indexed_track(database, "Artist/current.mp3")
+    assert current.id is not None
+    bot.player_states.get_or_create(123).current_track = current
+
+    add_snapshot = ControlCenterService(bot).snapshot_for(guild)  # type: ignore[arg-type]
+    add_view = ControlCenterView(bot, add_snapshot)
+    add_button = _button_by_id(add_view, "weasel:controls:playall_exception")
+
+    _store_exception(database, track_id=current.id)
+    remove_snapshot = ControlCenterService(bot).snapshot_for(guild)  # type: ignore[arg-type]
+    remove_view = ControlCenterView(bot, remove_snapshot)
+    remove_button = _button_by_id(remove_view, "weasel:controls:playall_exception")
+
+    assert add_button.emoji is not None
+    assert str(add_button.emoji) == "<:wg_exception_add:501>"
+    assert remove_button.emoji is not None
+    assert str(remove_button.emoji) == "<:wg_exception_remove:502>"
+
+
+def test_control_center_exception_button_fallbacks_and_disabled_states(
+    database: SQLiteDatabase,
+) -> None:
+    bot = _FakeBot(database)
+    guild = _FakeGuild(guild_id=123, voice_client=None)
+
+    idle_snapshot = ControlCenterService(bot).snapshot_for(guild)  # type: ignore[arg-type]
+    idle_view = ControlCenterView(bot, idle_snapshot)
+
+    unavailable = replace(_indexed_track(database, "Artist/unavailable.mp3"), is_available=False)
+    unavailable = TrackRepository(database).upsert(unavailable)
+    bot.player_states.get_or_create(123).current_track = unavailable
+    unavailable_snapshot = ControlCenterService(bot).snapshot_for(guild)  # type: ignore[arg-type]
+    unavailable_view = ControlCenterView(bot, unavailable_snapshot)
+
+    non_local = Track(source="web", source_id="remote", display_title="remote")
+    bot.player_states.get_or_create(123).current_track = non_local
+    non_local_snapshot = ControlCenterService(bot).snapshot_for(guild)  # type: ignore[arg-type]
+    non_local_view = ControlCenterView(bot, non_local_snapshot)
+
+    local = _indexed_track(database, "Artist/local.mp3")
+    assert local.id is not None
+    bot.player_states.get_or_create(123).current_track = local
+    add_snapshot = ControlCenterService(bot).snapshot_for(guild)  # type: ignore[arg-type]
+    add_view = ControlCenterView(bot, add_snapshot)
+    _store_exception(database, track_id=local.id)
+    remove_snapshot = ControlCenterService(bot).snapshot_for(guild)  # type: ignore[arg-type]
+    remove_view = ControlCenterView(bot, remove_snapshot)
+
+    assert _button_by_id(idle_view, "weasel:controls:playall_exception").disabled is True
+    assert _button_by_id(unavailable_view, "weasel:controls:playall_exception").disabled is True
+    assert _button_by_id(non_local_view, "weasel:controls:playall_exception").disabled is True
+    assert str(_button_by_id(add_view, "weasel:controls:playall_exception").emoji) == "➕"
+    assert str(_button_by_id(remove_view, "weasel:controls:playall_exception").emoji) == "➖"
+
+
+@pytest.mark.asyncio
+async def test_control_center_exception_button_toggles_policy_and_refreshes_views(
+    database: SQLiteDatabase,
+) -> None:
+    bot = _FakeBot(database)
+    player = _FakePlayer()
+    guild = _FakeGuild(guild_id=123, voice_client=player)
+    channel = _FakeChannel(channel_id=10)
+    bot.channels[10] = channel
+    interaction = _FakeInteraction(guild=guild, channel=channel)
+    current = _indexed_track(database, "Artist/current.mp3")
+    assert current.id is not None
+    bot.player_states.get_or_create(123).current_track = current
+    public_message = await channel.send(view=discord.ui.View())
+    bot.now_playing_panels.set(NowPlayingPanelRecord(123, 10, public_message.id))
+
+    await ControlCenterService(bot).run_action(  # type: ignore[arg-type]
+        interaction,  # type: ignore[arg-type]
+        "toggle_playall_exception",
+    )
+
+    assert PlayAllPolicyRepository(database).has_track_exception(
+        guild_id=123,
+        track_id=current.id,
+    )
+    assert public_message.edit_count == 1
+    assert interaction.edit_count == 1
+    assert "Added exception" in interaction.edited_messages[0]
+    assert isinstance(interaction.edited_views[0], ControlCenterView)
+    refreshed_button = _button_by_id(
+        interaction.edited_views[0],
+        "weasel:controls:playall_exception",
+    )
+    assert str(refreshed_button.emoji) == "➖"
+    assert player.stop_count == 0
+    assert player.disconnected is False
+    assert player.volumes == []
+
+    second = _FakeInteraction(guild=guild, channel=channel)
+    await ControlCenterService(bot).run_action(  # type: ignore[arg-type]
+        second,  # type: ignore[arg-type]
+        "toggle_playall_exception",
+    )
+
+    assert not PlayAllPolicyRepository(database).has_track_exception(
+        guild_id=123,
+        track_id=current.id,
+    )
+    assert public_message.edit_count == 2
+    assert "Removed exception" in second.edited_messages[0]
+
+
+@pytest.mark.asyncio
+async def test_control_center_exception_button_rejects_unauthorized_without_public_refresh(
+    database: SQLiteDatabase,
+) -> None:
+    bot = _FakeBot(database)
+    guild = _FakeGuild(guild_id=123, voice_client=None)
+    channel = _FakeChannel(channel_id=10)
+    bot.channels[10] = channel
+    current = _indexed_track(database, "Artist/current.mp3")
+    assert current.id is not None
+    bot.player_states.get_or_create(123).current_track = current
+    public_message = await channel.send(view=discord.ui.View())
+    bot.now_playing_panels.set(NowPlayingPanelRecord(123, 10, public_message.id))
+    interaction = _FakeInteraction(guild=guild, channel=channel, administrator=False)
+
+    await ControlCenterService(bot).run_action(  # type: ignore[arg-type]
+        interaction,  # type: ignore[arg-type]
+        "toggle_playall_exception",
+    )
+
+    assert not PlayAllPolicyRepository(database).has_track_exception(
+        guild_id=123,
+        track_id=current.id,
+    )
+    assert public_message.edit_count == 0
+    assert "Only an administrator" in interaction.edited_messages[0]
+
+
 async def _run_slash(
     cog: MusicCog,
     command_name: str,
@@ -603,6 +740,24 @@ def _button_labels(view: discord.ui.View | None) -> list[str | None]:
         for item in view.children
         if isinstance(item, discord.ui.Button) and not item.disabled
     ]
+
+
+def _button_by_id(view: discord.ui.View | None, custom_id: str) -> discord.ui.Button[Any]:
+    if view is None:
+        raise AssertionError(f"Button not found: {custom_id}")
+    for item in view.children:
+        if isinstance(item, discord.ui.Button) and item.custom_id == custom_id:
+            return item
+    raise AssertionError(f"Button not found: {custom_id}")
+
+
+def _store_exception(database: SQLiteDatabase, *, track_id: int) -> None:
+    UserRepository(database).upsert(UserRecord(user_id=42, display_name="Listener"))
+    PlayAllPolicyRepository(database).add_track_exception(
+        guild_id=123,
+        track_id=track_id,
+        created_by_user_id=42,
+    )
 
 
 def _indexed_track(database: SQLiteDatabase, relative_path: str) -> Track:

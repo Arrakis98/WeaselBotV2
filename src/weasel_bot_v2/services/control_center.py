@@ -7,11 +7,8 @@ from typing import Any, cast
 
 import discord
 
-from weasel_bot_v2.repositories import PlayAllPolicyRepository, TrackRepository, UserRepository
 from weasel_bot_v2.services.audio import AudioPlaybackService, PlaybackResult
-from weasel_bot_v2.services.local_library import LocalLibraryService
 from weasel_bot_v2.services.now_playing_panel import (
-    RATINGS_CENTER_PLACEHOLDER_CUSTOM_ID,
     NowPlayingPanelService,
     NowPlayingSnapshot,
     format_queue,
@@ -20,7 +17,14 @@ from weasel_bot_v2.services.now_playing_panel import (
     respond_ephemeral_update,
     shuffle_upcoming_queue,
 )
-from weasel_bot_v2.services.play_all_policy import PlayAllPolicyService
+from weasel_bot_v2.services.play_all_exception_controls import (
+    PLAY_ALL_EXCEPTION_PERMISSION_ERROR,
+    can_manage_play_all_exceptions,
+    current_track_has_play_all_exception,
+    play_all_exception_button_disabled,
+    resolve_play_all_exception_emoji,
+    toggle_current_play_all_exception,
+)
 from weasel_bot_v2.services.player_actions import PlayerActionService
 from weasel_bot_v2.services.player_state import VOLUME_STEP
 
@@ -135,10 +139,10 @@ CONTROL_CENTER_SPECS: tuple[ControlCenterButtonSpec, ...] = (
         discord.ButtonStyle.secondary,
     ),
     ControlCenterButtonSpec(
-        "placeholder",
-        RATINGS_CENTER_PLACEHOLDER_CUSTOM_ID,
+        "toggle_playall_exception",
+        "weasel:controls:playall_exception",
         None,
-        "❔",
+        "➕",
         2,
         discord.ButtonStyle.secondary,
     ),
@@ -267,6 +271,19 @@ class ControlCenterService:
                 )
                 return
             else:
+                if action_key == "toggle_playall_exception" and not (
+                    await can_manage_play_all_exceptions(self.bot, interaction)
+                ):
+                    snapshot = panel.snapshot_for(guild)
+                    await respond_ephemeral_update(
+                        interaction,
+                        format_control_center(
+                            snapshot,
+                            notice=PLAY_ALL_EXCEPTION_PERMISSION_ERROR,
+                        ),
+                        view=ControlCenterView(self.bot, snapshot),
+                    )
+                    return
                 result = await self._run_mutating_action(guild, interaction, action_key)
                 action_message = result.message
                 await panel.refresh_locked(
@@ -364,10 +381,10 @@ class ControlCenterService:
                 )
                 return
             if action_key == "toggle_playall_exception":
-                if not await _is_admin_or_owner(self.bot, interaction):
+                if not await can_manage_play_all_exceptions(self.bot, interaction):
                     await respond_ephemeral_update(
                         interaction,
-                        "Only an administrator or bot owner can manage /play_all exceptions.",
+                        PLAY_ALL_EXCEPTION_PERMISSION_ERROR,
                         view=AdvancedActionsView(self.bot, snapshot),
                     )
                     return
@@ -410,6 +427,17 @@ class ControlCenterService:
                 display_name=interaction.user.display_name,
                 rating_value=action_key,
             )
+        if action_key == "toggle_playall_exception":
+            state = self.bot.player_states.get(guild.id)
+            track = state.current_track if state is not None else None
+            result = toggle_current_play_all_exception(
+                self.bot,
+                guild_id=guild.id,
+                user_id=interaction.user.id,
+                display_name=getattr(interaction.user, "display_name", None),
+                track=track,
+            )
+            return PlaybackResult(ok=result.ok, message=result.message)
 
         actions: dict[
             str,
@@ -451,7 +479,8 @@ class ControlCenterService:
         if action_key == "toggle_playall_exception":
             state = self.bot.player_states.get(guild.id)
             track = state.current_track if state is not None else None
-            result = _play_all_policy_service(self.bot).toggle_current_track_exception(
+            result = toggle_current_play_all_exception(
+                self.bot,
                 guild_id=guild.id,
                 user_id=interaction.user.id,
                 display_name=getattr(interaction.user, "display_name", None),
@@ -490,23 +519,7 @@ class ControlCenterView(discord.ui.View):
         self.bot = bot
         self.guild_id = snapshot.guild_id
         for spec in CONTROL_CENTER_SPECS:
-            if spec.key == "placeholder":
-                self.add_item(ControlCenterPlaceholderButton(spec))
-                continue
             self.add_item(ControlCenterButton(bot, spec, snapshot))
-
-
-class ControlCenterPlaceholderButton(discord.ui.Button[Any]):
-    def __init__(self, spec: ControlCenterButtonSpec) -> None:
-        super().__init__(
-            label=None,
-            emoji=spec.emoji,
-            custom_id=spec.custom_id,
-            row=spec.row,
-            style=discord.ButtonStyle.secondary,
-            disabled=True,
-        )
-        self.spec = spec
 
 
 class ControlCenterButton(discord.ui.Button[Any]):
@@ -517,7 +530,21 @@ class ControlCenterButton(discord.ui.Button[Any]):
         snapshot: NowPlayingSnapshot,
     ) -> None:
         disabled = _control_disabled(spec.key, snapshot)
-        emoji = resolve_control_emoji(bot, spec.key, snapshot, fallback=spec.emoji)
+        state = bot.player_states.get(snapshot.guild_id)
+        track = state.current_track if state is not None else None
+        if spec.key == "toggle_playall_exception":
+            disabled = play_all_exception_button_disabled(
+                bot,
+                guild_id=snapshot.guild_id,
+                track=track,
+            )
+            emoji = resolve_play_all_exception_emoji(
+                bot,
+                guild_id=snapshot.guild_id,
+                track=track,
+            )
+        else:
+            emoji = resolve_control_emoji(bot, spec.key, snapshot, fallback=spec.emoji)
         super().__init__(
             label=spec.label,
             emoji=emoji,
@@ -666,8 +693,6 @@ def control_center_custom_ids() -> tuple[str, ...]:
 def _control_disabled(key: str, snapshot: NowPlayingSnapshot) -> bool:
     if key in {"queue", "more"}:
         return False
-    if key == "placeholder":
-        return True
     if not snapshot.has_track:
         return True
     if key == "previous":
@@ -697,7 +722,8 @@ def _advanced_action_specs(
     state = bot.player_states.get(snapshot.guild_id)
     track = state.current_track if state is not None else None
     if track is not None and track.id is not None and track.is_available:
-        has_exception = _play_all_policy_service(bot).has_track_exception(
+        has_exception = current_track_has_play_all_exception(
+            bot,
             guild_id=snapshot.guild_id,
             track=track,
         )
@@ -713,27 +739,6 @@ def _advanced_action_specs(
             ),
         )
     return tuple(specs)
-
-
-def _play_all_policy_service(bot: Any) -> PlayAllPolicyService:
-    return PlayAllPolicyService(
-        policy=PlayAllPolicyRepository(bot.database),
-        tracks=TrackRepository(bot.database),
-        users=UserRepository(bot.database),
-        library=LocalLibraryService(bot.settings.bot.music_library, TrackRepository(bot.database)),
-    )
-
-
-async def _is_admin_or_owner(bot: Any, interaction: discord.Interaction) -> bool:
-    permissions = getattr(interaction.user, "guild_permissions", None)
-    if bool(getattr(permissions, "administrator", False)):
-        return True
-    try:
-        app_info = await bot.application_info()
-    except Exception:  # noqa: BLE001 - fall back to guild administrator.
-        return False
-    owner = getattr(app_info, "owner", None)
-    return getattr(owner, "id", None) == interaction.user.id
 
 
 async def _send_initial_control_center(
