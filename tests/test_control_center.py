@@ -10,11 +10,13 @@ import pytest
 from weasel_bot_v2.cogs.music import MusicCog
 from weasel_bot_v2.config import DatabaseConfig
 from weasel_bot_v2.database import SQLiteDatabase
-from weasel_bot_v2.models import Rating, Track
+from weasel_bot_v2.models import Rating, Track, UserRecord
 from weasel_bot_v2.repositories import (
+    PlayAllPolicyRepository,
     RatingRepository,
     TrackRepository,
     TrackVolumeOverrideRepository,
+    UserRepository,
 )
 from weasel_bot_v2.services.application_emojis import ApplicationEmojiRegistry
 from weasel_bot_v2.services.control_center import (
@@ -218,6 +220,83 @@ async def test_more_actions_reset_track_volume_reuses_existing_reset_action(
     assert interaction.edit_count == 1
     assert "Track volume reset to default: 100%" in interaction.edited_messages[0]
     assert isinstance(interaction.edited_views[0], AdvancedActionsView)
+
+
+def test_more_actions_show_add_or_remove_play_all_exception(database: SQLiteDatabase) -> None:
+    bot = _FakeBot(database)
+    guild = _FakeGuild(guild_id=123, voice_client=None)
+    current = _indexed_track(database, "Artist/current.mp3")
+    assert current.id is not None
+    bot.player_states.get_or_create(123).current_track = current
+    snapshot = ControlCenterService(bot).snapshot_for(guild)  # type: ignore[arg-type]
+
+    add_view = AdvancedActionsView(bot, snapshot)
+    add_labels = _button_labels(add_view)
+    UserRepository(database).upsert(UserRecord(user_id=42, display_name="Listener"))
+    PlayAllPolicyRepository(database).add_track_exception(
+        guild_id=123,
+        track_id=current.id,
+        created_by_user_id=42,
+    )
+    remove_view = AdvancedActionsView(bot, snapshot)
+    remove_labels = _button_labels(remove_view)
+
+    assert "Add Play All Exception" in add_labels
+    assert "Remove Play All Exception" in remove_labels
+
+
+@pytest.mark.asyncio
+async def test_more_actions_toggle_adds_and_removes_play_all_exception(
+    database: SQLiteDatabase,
+) -> None:
+    bot = _FakeBot(database)
+    guild = _FakeGuild(guild_id=123, voice_client=None)
+    current = _indexed_track(database, "Artist/current.mp3")
+    assert current.id is not None
+    bot.player_states.get_or_create(123).current_track = current
+    interaction = _FakeInteraction(guild=guild)
+    policy = PlayAllPolicyRepository(database)
+
+    await ControlCenterService(bot).run_advanced_action(  # type: ignore[arg-type]
+        interaction,  # type: ignore[arg-type]
+        "toggle_playall_exception",
+    )
+
+    assert policy.has_track_exception(guild_id=123, track_id=current.id)
+    assert "Added exception" in interaction.edited_messages[0]
+    assert isinstance(interaction.edited_views[0], AdvancedActionsView)
+
+    second = _FakeInteraction(guild=guild)
+    await ControlCenterService(bot).run_advanced_action(  # type: ignore[arg-type]
+        second,  # type: ignore[arg-type]
+        "toggle_playall_exception",
+    )
+
+    assert not policy.has_track_exception(guild_id=123, track_id=current.id)
+    assert "Removed exception" in second.edited_messages[0]
+
+
+@pytest.mark.asyncio
+async def test_more_actions_play_all_exception_toggle_rejects_non_admin(
+    database: SQLiteDatabase,
+) -> None:
+    bot = _FakeBot(database)
+    guild = _FakeGuild(guild_id=123, voice_client=None)
+    current = _indexed_track(database, "Artist/current.mp3")
+    assert current.id is not None
+    bot.player_states.get_or_create(123).current_track = current
+    interaction = _FakeInteraction(guild=guild, administrator=False)
+
+    await ControlCenterService(bot).run_advanced_action(  # type: ignore[arg-type]
+        interaction,  # type: ignore[arg-type]
+        "toggle_playall_exception",
+    )
+
+    assert "Only an administrator" in interaction.edited_messages[0]
+    assert not PlayAllPolicyRepository(database).has_track_exception(
+        guild_id=123,
+        track_id=current.id,
+    )
 
 
 @pytest.mark.asyncio
@@ -603,9 +682,19 @@ class _FakePlayback:
 
 
 class _FakeInteraction:
-    def __init__(self, *, guild: _FakeGuild, channel: _FakeChannel | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        guild: _FakeGuild,
+        channel: _FakeChannel | None = None,
+        administrator: bool = True,
+    ) -> None:
         self.guild = guild
-        self.user = SimpleNamespace(id=42, display_name="Listener")
+        self.user = SimpleNamespace(
+            id=42,
+            display_name="Listener",
+            guild_permissions=SimpleNamespace(administrator=administrator),
+        )
         self.channel = channel or _FakeChannel(channel_id=10)
         self.response = _FakeResponse(self)
         self.followup = _FakeFollowup(self)

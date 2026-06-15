@@ -237,28 +237,32 @@ move fails, the rating and skip remain completed. Administrative purge,
 inspection, and restoration commands use record IDs and indexed tracks only;
 they never accept raw filesystem paths.
 
-## ADR-0016: Guild-Wide `/play_all` Artist Policy
+## ADR-0016: Invocation-Scoped `/play_all` Artist Exclusions
 
 - Status: Accepted
 - Date: 2026-06-15
 
-`/play_all` artist exclusions are persisted per guild in SQLite rather than kept
-in memory or treated as per-user preferences. The data model has three parts:
-multiple normalized artist exclusions, multiple track exception records, and one
-guild-wide strict-mode boolean.
+`/play_all` artist exclusions are chosen directly on each command invocation
+through an optional comma-separated `exclusions` string. They are not persisted
+as a guild-wide policy and do not affect another user's later `/play_all`.
 
 Artist names use the same case-insensitive and accent-insensitive normalization
 as local-library search. Exclusions are resolved once against currently indexed
-artists and stored by normalized artist key plus a display name. Track
-exceptions store stable indexed track IDs. Commands never accept filesystem
-paths.
+available artists. Unknown or ambiguous artists reject the command before
+playback starts and before the queue is mutated. Commands never accept
+filesystem paths for artist or exception management input.
 
-The policy is deliberately scoped only to future `/play_all` selections. It does
-not affect search, direct local playback, manual queue additions, existing queue
-contents, ratings, quarantine administration, restoration, playlists, profiles,
-or recommendations. Unavailable and quarantined tracks remain ineligible even
-when an exception record exists.
+Track exceptions remain persistent per guild in `play_all_track_exceptions` and
+store stable indexed track IDs. The `use_exceptions` slash option is
+invocation-only: when true, valid stored exceptions can re-allow tracks by the
+artists named in the current `exclusions` option; when false, all tracks by
+those artists remain excluded for that run. Unavailable, quarantined, missing,
+invalid, and non-MP3 tracks remain ineligible even when an exception record
+exists.
 
-Strict mode is guild-wide. When disabled, valid stored track exceptions can pass
-through artist exclusions. When enabled, every track from an excluded artist is
-filtered and stored exceptions are ignored until strict mode is disabled again.
+Exception management is exposed through the personal More Actions current-track
+toggle and `/playall_exception track:<search> enabled:true|false`, both
+administrator/owner restricted. The legacy `play_all_artist_exclusions` and
+`play_all_policy` tables remain in SQLite for backward compatibility and
+possible future presets, but their old Discord policy-management commands are no
+longer registered.

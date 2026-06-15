@@ -111,20 +111,14 @@ Expected Discord slash commands after the bot logs in:
 - `/dislike`
 - `/superdislike`
 - `/my_rating`
+- `/my_ratings`
 - `/volume`
 - `/reset_track_volume`
 - `/controls`
 - `/purge_superdisliked`
 - `/quarantine_list`
 - `/restore_quarantined`
-- `/playall_exclude_artist`
-- `/playall_unexclude_artist`
-- `/playall_exclusions`
-- `/playall_add_exception`
-- `/playall_remove_exception`
-- `/playall_exceptions`
-- `/playall_strict`
-- `/playall_policy`
+- `/playall_exception`
 
 The Now Playing panel also exposes active Like, SuperLike, Dislike, and
 SuperDislike buttons. Ratings are stored for later personalization work, but they
@@ -188,16 +182,26 @@ eligible SuperDisliked local tracks without filesystem changes, and
 `/restore_quarantined` provide the minimal reversible audit workflow. Discord
 output uses container-relative paths only and never host paths.
 
-`/play_all` supports guild-wide artist exclusion policy. Administrators can store
-multiple excluded artists, multiple per-track exceptions, and one guild-wide
-strict-mode boolean. With strict mode disabled, `/play_all` filters excluded
-artists but keeps valid stored exception tracks eligible. With strict mode
-enabled, all tracks by excluded artists are filtered and exceptions are ignored
-until strict mode is disabled again. This policy only affects new `/play_all`
-selections; `/play_local`, `/search_local`, manual queue additions, current
-playback, existing queue contents, ratings, quarantine administration, and
-restoration are unchanged. Quarantined or unavailable tracks remain ineligible
-for `/play_all` regardless of exception records.
+`/my_ratings` shows the invoking user's saved ratings for the current server
+only, with an optional rating filter and page number. The output is ephemeral and
+uses safe track titles plus artist/category context; it never shows local paths
+or another user's ratings.
+
+`/play_all` supports invocation-only artist exclusions with optional persistent
+track exceptions. For example:
+`/play_all exclusions:"GIMS, Michel Sardou" use_exceptions:true` excludes both
+artists for that run only while allowing valid stored exception tracks back in.
+Use `use_exceptions:false` to strictly exclude every track by those artists for
+that one invocation. The exclusions string accepts multiple comma-separated
+artists, resolves names case-insensitively and accent-insensitively against
+currently indexed available artists, and fails without queue mutation when an
+artist is unknown or ambiguous. Stored exceptions remain persistent per guild
+and can be managed with the current-track More Actions toggle or
+`/playall_exception track:<search> enabled:true|false`. Quarantined,
+unavailable, missing, invalid, and non-MP3 tracks remain ineligible regardless
+of exception records. `/play_local`, `/search_local`, current playback, existing
+queue contents, ratings, quarantine administration, restoration, and future
+playlists are unchanged.
 
 Lavalink is only reachable on the internal Docker network by default. The example
 compose file mounts the active music library read-only at `/music` for both bot

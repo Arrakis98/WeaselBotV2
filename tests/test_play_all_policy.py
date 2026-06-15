@@ -102,6 +102,41 @@ def test_play_all_filter_supports_multiple_exclusions_and_exceptions(
     assert b_drop.id not in _ids(eligible)
 
 
+def test_invocation_exclusions_parse_multiple_artists_and_deduplicate(
+    database: SQLiteDatabase,
+) -> None:
+    service = _policy_service(database)
+    _track(database, "Pop/GIMS/One.mp3", artist="GIMS")
+    _track(database, "Pop/Gíms/Two.mp3", artist="Gíms")
+    _track(database, "Rock/Sardou/Three.mp3", artist="Michel Sardou")
+
+    resolution = service.resolve_invocation_exclusions(" GIMS, gims, Gíms, Michel Sardou ,, ")
+
+    assert resolution.ok is True
+    assert resolution.excluded_artist_keys == frozenset({"gims", "michel sardou"})
+    assert resolution.display_artists == ("GIMS", "Michel Sardou")
+
+
+def test_invocation_exclusions_filter_several_artists_without_persisting(
+    database: SQLiteDatabase,
+) -> None:
+    service = _policy_service(database)
+    gims = _track(database, "Pop/GIMS/One.mp3", artist="GIMS")
+    sardou = _track(database, "Rock/Sardou/Two.mp3", artist="Michel Sardou")
+    other = _track(database, "Rock/Other/Three.mp3", artist="Other")
+    resolution = service.resolve_invocation_exclusions("gíms, michel sardou")
+
+    pool = service.filter_tracks_for_play_all(
+        123,
+        [gims, sardou, other],
+        excluded_artist_keys=resolution.excluded_artist_keys,
+        use_exceptions=True,
+    )
+
+    assert _ids(list(pool.eligible_tracks)) == _ids([other])
+    assert service.summary(123).exclusions == ()
+
+
 def test_strict_mode_ignores_and_then_reactivates_stored_exceptions(
     database: SQLiteDatabase,
 ) -> None:
@@ -144,7 +179,7 @@ def test_unavailable_exception_remains_ineligible_and_search_remains_unaffected(
 
 
 @pytest.mark.asyncio
-async def test_play_all_uses_latest_policy_without_mutating_existing_queue(
+async def test_play_all_invocation_exclusions_do_not_mutate_existing_queue(
     database: SQLiteDatabase,
 ) -> None:
     bot = _FakeBot(database)
@@ -156,37 +191,90 @@ async def test_play_all_uses_latest_policy_without_mutating_existing_queue(
     state = bot.player_states.get_or_create(123)
     state.current_track = current
     state.upcoming = [queued]
-    _exclude(_policy_service(database), "GIMS")
     guild = _FakeGuild(guild_id=123, voice_client=object())
     interaction = _FakeInteraction(guild=guild)
 
-    await _run_slash(cog, "play_all", interaction)
+    await _run_slash(cog, "play_all", interaction, "GIMS", True)
 
     assert state.upcoming[0] == queued
     assert allowed in state.upcoming
     assert all(track.artist_guess != "GIMS" or track == queued for track in state.upcoming)
     assert "Added to queue" in interaction.followup_messages[0]
+    assert _policy_service(database).summary(123).exclusions == ()
 
 
 @pytest.mark.asyncio
-async def test_play_all_empty_policy_pool_returns_clear_response(database: SQLiteDatabase) -> None:
+async def test_play_all_empty_invocation_pool_returns_clear_response(
+    database: SQLiteDatabase,
+) -> None:
     bot = _FakeBot(database)
     cog = MusicCog(cast(Any, bot))
     _track(database, "Pop/GIMS/Blocked.mp3", artist="GIMS")
-    _exclude(_policy_service(database), "GIMS")
     interaction = _FakeInteraction(guild=_FakeGuild(guild_id=123, voice_client=None))
 
-    await _run_slash(cog, "play_all", interaction)
+    await _run_slash(cog, "play_all", interaction, "GIMS", True)
 
     assert interaction.followup_ephemeral == [True]
-    assert "policy filter" in interaction.followup_messages[0]
+    assert "removed every Play All track" in interaction.followup_messages[0]
 
 
 @pytest.mark.asyncio
-async def test_policy_commands_enforce_permissions_and_report_status(
+async def test_play_all_unknown_and_ambiguous_invocation_exclusions_do_not_mutate_queue(
     database: SQLiteDatabase,
 ) -> None:
-    _track(database, "Pop/GIMS/Balader.mp3", artist="GIMS")
+    _track(database, "Pop/Alpha/One.mp3", artist="Alpha")
+    _track(database, "Pop/Alpine/Two.mp3", artist="Alpine")
+    bot = _FakeBot(database)
+    cog = MusicCog(cast(Any, bot))
+    unknown = _FakeInteraction(guild=_FakeGuild(guild_id=123, voice_client=None))
+    ambiguous = _FakeInteraction(guild=_FakeGuild(guild_id=123, voice_client=None))
+
+    await _run_slash(cog, "play_all", unknown, "Unknown", True)
+    await _run_slash(cog, "play_all", ambiguous, "Al", True)
+
+    assert "unknown: Unknown" in unknown.followup_messages[0]
+    assert "ambiguous: Al" in ambiguous.followup_messages[0]
+    assert bot.player_states.get_or_create(123).upcoming == []
+
+
+@pytest.mark.asyncio
+async def test_play_all_exceptions_are_invocation_scoped_and_strict_flag_is_not_persisted(
+    database: SQLiteDatabase,
+) -> None:
+    keep = _track(database, "Pop/GIMS/Keep.mp3", artist="GIMS")
+    drop = _track(database, "Pop/GIMS/Drop.mp3", artist="GIMS")
+    other = _track(database, "Pop/Other/Free.mp3", artist="Other")
+    current = _track(database, "Pop/Current/Current.mp3", artist="Current")
+    _exception(_policy_service(database), "Keep")
+    bot = _FakeBot(database)
+    bot.player_states.get_or_create(123).current_track = current
+    cog = MusicCog(cast(Any, bot))
+    with_exceptions = _FakeInteraction(guild=_FakeGuild(guild_id=123, voice_client=object()))
+    strict = _FakeInteraction(guild=_FakeGuild(guild_id=123, voice_client=object()))
+
+    await _run_slash(cog, "play_all", with_exceptions, "gíms", True)
+    first_state = bot.player_states.get_or_create(123)
+    first_ids = _ids(first_state.upcoming)
+    first_state.upcoming = []
+    await _run_slash(cog, "play_all", strict, "GIMS", False)
+    second_state = bot.player_states.get_or_create(123)
+    second_ids = _ids(second_state.upcoming)
+
+    assert keep.id in first_ids
+    assert other.id in first_ids
+    assert drop.id not in first_ids
+    assert keep.id not in second_ids
+    assert other.id in second_ids
+    assert _policy_service(database).summary(123).exclusions == ()
+    assert _policy_service(database).summary(123).policy.strict_exclusions is False
+
+
+@pytest.mark.asyncio
+async def test_playall_exception_command_adds_removes_and_enforces_permissions(
+    database: SQLiteDatabase,
+) -> None:
+    track = _track(database, "Pop/GIMS/Balader.mp3", artist="GIMS")
+    assert track.id is not None
     bot = _FakeBot(database)
     cog = MusicCog(cast(Any, bot))
     denied = _FakeInteraction(
@@ -195,35 +283,65 @@ async def test_policy_commands_enforce_permissions_and_report_status(
     )
     allowed = _FakeInteraction(guild=_FakeGuild(guild_id=123, voice_client=None))
 
-    await _run_slash(cog, "playall_exclude_artist", denied, "GIMS")
-    await _run_slash(cog, "playall_exclude_artist", allowed, "GIMS")
-    await _run_slash(cog, "playall_add_exception", allowed, "Balader")
-    await _run_slash(cog, "playall_strict", allowed, True)
-    await _run_slash(cog, "playall_policy", allowed)
-
+    await _run_slash(cog, "playall_exception", denied, "Balader", True)
+    await _run_slash(cog, "playall_exception", allowed, "Balader", True)
     assert "Only an administrator" in denied.response_messages[0]
-    assert "Excluded: GIMS" in allowed.response_messages[0]
-    assert "Status: active" in allowed.response_messages[1]
-    assert "Strict /play_all artist exclusions enabled" in allowed.response_messages[2]
-    assert "Strict mode: enabled" in allowed.response_messages[3]
+    assert "Added exception" in allowed.response_messages[0]
+    assert PlayAllPolicyRepository(database).has_track_exception(guild_id=123, track_id=track.id)
+
+    await _run_slash(cog, "playall_exception", allowed, "Balader", False)
+    assert "Removed exception" in allowed.response_messages[1]
+    assert not PlayAllPolicyRepository(database).has_track_exception(
+        guild_id=123,
+        track_id=track.id,
+    )
 
 
 @pytest.mark.asyncio
-async def test_ambiguous_and_unknown_resolution_do_not_modify_policy(
+async def test_playall_exception_rejects_unknown_ambiguous_and_unavailable_tracks(
     database: SQLiteDatabase,
 ) -> None:
+    unavailable = _track(database, "Pop/GIMS/Unavailable.mp3", artist="GIMS")
     _track(database, "Pop/Alpha/One.mp3", artist="Alpha")
     _track(database, "Pop/Alpine/Two.mp3", artist="Alpine")
-    bot = _FakeBot(database)
-    cog = MusicCog(cast(Any, bot))
+    assert unavailable.id is not None
+    TrackRepository(database).set_available(unavailable.id, False)
+    cog = MusicCog(cast(Any, _FakeBot(database)))
     interaction = _FakeInteraction(guild=_FakeGuild(guild_id=123, voice_client=None))
 
-    await _run_slash(cog, "playall_exclude_artist", interaction, "Al")
-    await _run_slash(cog, "playall_exclude_artist", interaction, "Unknown")
+    await _run_slash(cog, "playall_exception", interaction, "Missing", True)
+    await _run_slash(cog, "playall_exception", interaction, "Al", True)
+    await _run_slash(cog, "playall_exception", interaction, "Unavailable", True)
 
-    assert "ambiguous" in interaction.response_messages[0]
-    assert "No indexed" in interaction.response_messages[1]
-    assert _policy_service(database).summary(123).exclusions == ()
+    assert "No indexed available track matched" in interaction.response_messages[0]
+    assert "ambiguous" in interaction.response_messages[1]
+    assert "No indexed available track matched" in interaction.response_messages[2]
+    assert PlayAllPolicyRepository(database).list_track_exceptions(123) == []
+
+
+def test_play_all_command_surface_is_simplified() -> None:
+    command_names = {command.name for command in MusicCog.__cog_app_commands__}
+
+    assert {
+        "playall_exclude_artist",
+        "playall_unexclude_artist",
+        "playall_exclusions",
+        "playall_add_exception",
+        "playall_remove_exception",
+        "playall_exceptions",
+        "playall_strict",
+        "playall_policy",
+    }.isdisjoint(command_names)
+    assert "play_all" in command_names
+    assert "playall_exception" in command_names
+    play_all = cast(
+        Any,
+        next(command for command in MusicCog.__cog_app_commands__ if command.name == "play_all"),
+    )
+    assert {parameter.name for parameter in play_all.parameters} >= {
+        "exclusions",
+        "use_exceptions",
+    }
 
 
 async def _run_slash(

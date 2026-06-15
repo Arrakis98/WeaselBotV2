@@ -94,7 +94,7 @@
 * `Same category`. 🗂️
 * Radio locale basée sur les dossiers et métadonnées. 📻
 * Favoriser Likes et SuperLikes. ❤️
-* Exclusions d'artistes guild-wide pour `/play_all`, exceptions par piste et mode strict. ✅
+* Exclusions d'artistes à l'invocation pour `/play_all`, exceptions persistantes par piste et gestion compacte via Discord. ✅
 * Réduire ou exclure Dislikes et SuperDislikes selon les réglages. 🚫
 * Tenir compte des utilisateurs présents dans le salon vocal. 👥
 * Éviter les répétitions trop fréquentes. 🔁

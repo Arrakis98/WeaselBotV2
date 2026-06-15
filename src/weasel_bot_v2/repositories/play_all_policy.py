@@ -104,6 +104,18 @@ class PlayAllPolicyRepository:
             connection.commit()
             return cursor.rowcount > 0
 
+    def has_track_exception(self, *, guild_id: int, track_id: int) -> bool:
+        with self.database.connect() as connection:
+            row = connection.execute(
+                """
+                SELECT 1
+                FROM play_all_track_exceptions
+                WHERE guild_id = ? AND track_id = ?
+                """,
+                (guild_id, track_id),
+            ).fetchone()
+        return row is not None
+
     def list_track_exceptions(self, guild_id: int) -> list[PlayAllTrackException]:
         with self.database.connect() as connection:
             rows = connection.execute(

@@ -14,6 +14,7 @@ from weasel_bot_v2.models.records import (
     Track,
     TrackVolumeOverride,
     UserRecord,
+    UserTrackRating,
 )
 
 __all__ = [
@@ -29,5 +30,6 @@ __all__ = [
     "RatingCounts",
     "Track",
     "TrackVolumeOverride",
+    "UserTrackRating",
     "UserRecord",
 ]

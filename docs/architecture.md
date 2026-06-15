@@ -129,19 +129,26 @@ filters to tracks whose indexed extension is `.mp3`, shuffles them, starts the
 first track when idle, and appends the remaining tracks to the upcoming queue.
 Non-MP3 indexed files are intentionally ignored by `/play_all` for now.
 
-`/play_all` also applies an optional guild-wide artist exclusion policy through
-`PlayAllPolicyService`. The service loads indexed available MP3 tracks, then
-applies stored artist exclusions, stored track exceptions, and the guild's
-strict-mode boolean in one application-layer pass. With strict mode disabled,
-valid exception tracks remain eligible even when their artist is excluded. With
-strict mode enabled, exceptions remain stored but are ignored. Unavailable or
-quarantined tracks are filtered before the policy can re-allow anything.
+`/play_all` can receive invocation-only artist exclusions through the
+`exclusions` slash option. `PlayAllPolicyService` parses comma-separated artist
+names, resolves them case-insensitively and accent-insensitively against
+currently indexed available artists, and filters the eligible pool in one
+application-layer pass. The `use_exceptions` slash option is also invocation-only:
+when true, valid stored per-guild track exceptions can re-allow tracks by the
+excluded artists; when false, exceptions are ignored for that run. Unavailable,
+quarantined, missing, invalid, and non-MP3 tracks remain ineligible regardless
+of exception records.
 
-The policy affects only newly generated `/play_all` selections. It does not
-change `/play_local`, `/search_local`, direct track playback, manual queue
+The filtering affects only the newly generated `/play_all` selection. It does
+not change `/play_local`, `/search_local`, direct track playback, manual queue
 additions, existing queue contents, current playback, ratings, quarantine
-administration, restoration, or future playlist behavior. Policy changes never
-retroactively remove tracks already queued.
+administration, restoration, or future playlist behavior. Invocation exclusions
+are never persisted and never retroactively remove tracks already queued.
+Persistent track exceptions are stored in `play_all_track_exceptions` and are
+managed by the current-track More Actions toggle or `/playall_exception`. The
+legacy `play_all_artist_exclusions` and `play_all_policy` tables remain in the
+schema for backward compatibility and possible future presets, but they are not
+the current Discord-facing artist exclusion UI.
 
 Phase 5.0 stores one active user rating per local track and guild. Users can set
 Like, SuperLike, Dislike, or SuperDislike from slash commands or the Now Playing

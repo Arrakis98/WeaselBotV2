@@ -7,7 +7,9 @@ from typing import Any, cast
 
 import discord
 
+from weasel_bot_v2.repositories import PlayAllPolicyRepository, TrackRepository, UserRepository
 from weasel_bot_v2.services.audio import AudioPlaybackService, PlaybackResult
+from weasel_bot_v2.services.local_library import LocalLibraryService
 from weasel_bot_v2.services.now_playing_panel import (
     RATINGS_CENTER_PLACEHOLDER_CUSTOM_ID,
     NowPlayingPanelService,
@@ -18,6 +20,7 @@ from weasel_bot_v2.services.now_playing_panel import (
     respond_ephemeral_update,
     shuffle_upcoming_queue,
 )
+from weasel_bot_v2.services.play_all_policy import PlayAllPolicyService
 from weasel_bot_v2.services.player_actions import PlayerActionService
 from weasel_bot_v2.services.player_state import VOLUME_STEP
 
@@ -360,8 +363,16 @@ class ControlCenterService:
                     view=AdvancedConfirmationView(self.bot, action_key),
                 )
                 return
+            if action_key == "toggle_playall_exception":
+                if not await _is_admin_or_owner(self.bot, interaction):
+                    await respond_ephemeral_update(
+                        interaction,
+                        "Only an administrator or bot owner can manage /play_all exceptions.",
+                        view=AdvancedActionsView(self.bot, snapshot),
+                    )
+                    return
 
-            result = self._run_advanced_mutation(guild, action_key)
+            result = self._run_advanced_mutation(guild, interaction, action_key)
             if inspect.isawaitable(result):
                 result = await result
             await panel.refresh_locked(
@@ -428,6 +439,7 @@ class ControlCenterService:
     def _run_advanced_mutation(
         self,
         guild: discord.Guild,
+        interaction: discord.Interaction,
         action_key: str,
     ) -> Awaitable[PlaybackResult] | PlaybackResult:
         playback = AudioPlaybackService(self.bot, self.bot.settings.bot.music_library)
@@ -436,6 +448,16 @@ class ControlCenterService:
             return shuffle_upcoming_queue(state)
         if action_key == "reset_volume":
             return playback.reset_current_track_volume(guild)
+        if action_key == "toggle_playall_exception":
+            state = self.bot.player_states.get(guild.id)
+            track = state.current_track if state is not None else None
+            result = _play_all_policy_service(self.bot).toggle_current_track_exception(
+                guild_id=guild.id,
+                user_id=interaction.user.id,
+                display_name=getattr(interaction.user, "display_name", None),
+                track=track,
+            )
+            return PlaybackResult(ok=result.ok, message=result.message)
         if action_key == "clear_queue":
             return playback.clear_queue(guild.id)
         if action_key == "leave":
@@ -517,7 +539,7 @@ class AdvancedActionsView(discord.ui.View):
     def __init__(self, bot: Any, snapshot: NowPlayingSnapshot) -> None:
         super().__init__(timeout=300)
         self.bot = bot
-        for spec in ADVANCED_ACTIONS:
+        for spec in _advanced_action_specs(bot, snapshot):
             self.add_item(AdvancedActionButton(bot, spec, snapshot))
 
 
@@ -662,7 +684,56 @@ def _advanced_disabled(key: str, snapshot: NowPlayingSnapshot) -> bool:
         return not snapshot.has_track and snapshot.queue_length == 0
     if key in {"shuffle_queue", "clear_queue"}:
         return snapshot.queue_length == 0
+    if key == "toggle_playall_exception":
+        return not snapshot.has_track
     return not snapshot.has_track
+
+
+def _advanced_action_specs(
+    bot: Any,
+    snapshot: NowPlayingSnapshot,
+) -> tuple[ControlCenterButtonSpec, ...]:
+    specs = list(ADVANCED_ACTIONS)
+    state = bot.player_states.get(snapshot.guild_id)
+    track = state.current_track if state is not None else None
+    if track is not None and track.id is not None and track.is_available:
+        has_exception = _play_all_policy_service(bot).has_track_exception(
+            guild_id=snapshot.guild_id,
+            track=track,
+        )
+        specs.insert(
+            4,
+            ControlCenterButtonSpec(
+                "toggle_playall_exception",
+                "weasel:controls:advanced:playall_exception",
+                "Remove Play All Exception" if has_exception else "Add Play All Exception",
+                "⭐",
+                2,
+                discord.ButtonStyle.secondary,
+            ),
+        )
+    return tuple(specs)
+
+
+def _play_all_policy_service(bot: Any) -> PlayAllPolicyService:
+    return PlayAllPolicyService(
+        policy=PlayAllPolicyRepository(bot.database),
+        tracks=TrackRepository(bot.database),
+        users=UserRepository(bot.database),
+        library=LocalLibraryService(bot.settings.bot.music_library, TrackRepository(bot.database)),
+    )
+
+
+async def _is_admin_or_owner(bot: Any, interaction: discord.Interaction) -> bool:
+    permissions = getattr(interaction.user, "guild_permissions", None)
+    if bool(getattr(permissions, "administrator", False)):
+        return True
+    try:
+        app_info = await bot.application_info()
+    except Exception:  # noqa: BLE001 - fall back to guild administrator.
+        return False
+    owner = getattr(app_info, "owner", None)
+    return getattr(owner, "id", None) == interaction.user.id
 
 
 async def _send_initial_control_center(
