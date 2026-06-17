@@ -29,7 +29,8 @@ raised without forcing every later track to use the same volume. Phase 5.2 makes
 the Now Playing panel authoritative per guild during the current bot process:
 commands and buttons refresh one tracked panel instead of creating a new
 permanent panel for every action. Phase 5.3B adds the Weasel Galaxy Components
-V2 player panel with a legacy embed fallback.
+V2 player panel with a legacy embed fallback. Phase 6.4 connects approved Arcadia
+Music Tools quarantine reports to the existing reversible moderation service.
 
 ## Selected Stack
 
@@ -54,6 +55,7 @@ Create local private files when needed, but do not commit them:
 - `compose.yml`
 - `docker-compose.yml`
 - Lavalink local config files such as `application.local.yml`
+- Arcadia Music Tools reports and validation output
 
 ## Documentation
 
@@ -65,6 +67,7 @@ Create local private files when needed, but do not commit them:
 - [UI Design](docs/ui-design.md)
 - [User Flows](docs/user-flows.md)
 - [Deployment Notes](docs/deployment.md)
+- [Arcadia Quarantine Manifest](docs/arcadia-quarantine-manifest.md)
 - [Chaos Mode](docs/chaos-mode.md)
 
 ## Phase 1 Local Development
@@ -118,6 +121,7 @@ Expected Discord slash commands after the bot logs in:
 - `/purge_superdisliked`
 - `/quarantine_list`
 - `/restore_quarantined`
+- `/quarantine_manifest`
 - `/playall_exception`
 
 The Now Playing panel also exposes active Like, SuperLike, Dislike, and
@@ -182,6 +186,14 @@ eligible SuperDisliked local tracks without filesystem changes, and
 `/restore_quarantined` provide the minimal reversible audit workflow. Discord
 output uses container-relative paths only and never host paths.
 
+`/quarantine_manifest execute:false` loads one approved Arcadia Music Tools
+manifest and its matching successful validation report from a private read-only
+runtime mount. It rejects stale paths, changed hashes, unavailable references,
+currently playing tracks, inconsistent reports, and unsafe report families before
+any move starts. `execute:true` rechecks each SHA-256 immediately before using the
+same reversible quarantine journal. Repeated execution is idempotent, and every
+moved file remains restorable through `/restore_quarantined`.
+
 `/my_ratings` shows the invoking user's saved ratings for the current server
 only, with an optional rating filter and page number. The output is ephemeral and
 uses safe track titles plus artist/category context; it never shows local paths
@@ -209,4 +221,4 @@ compose file mounts the active music library read-only at `/music` for both bot
 and Lavalink. The bot also receives a least-privilege writable admin view at
 `/library_admin/music` plus a writable quarantine destination at
 `/library_admin/quarantine/super_disliked`; Lavalink does not receive those
-writable mounts.
+writable mounts. Approved Arcadia reports are mounted read-only for the bot only.
