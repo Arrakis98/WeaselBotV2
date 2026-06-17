@@ -98,7 +98,7 @@ class AdminCog(commands.Cog):
                 requested_by_user_id=interaction.user.id,
                 current_track_id=current_track_id,
             )
-        except ArcadiaManifestError as exc:
+        except (ArcadiaManifestError, ValueError) as exc:
             await interaction.followup.send(
                 f"Manifest rejected safely: {exc}",
                 ephemeral=True,
