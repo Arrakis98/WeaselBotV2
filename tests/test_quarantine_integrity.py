@@ -52,9 +52,7 @@ def test_quarantine_rolls_back_when_record_creation_fails(
         raise RuntimeError("database write failed")
 
     monkeypatch.setattr(service.quarantine, "create", fail_create)
-    expected_sha256 = hashlib.sha256(
-        (admin_root / track.relative_path).read_bytes()
-    ).hexdigest()
+    expected_sha256 = hashlib.sha256((admin_root / track.relative_path).read_bytes()).hexdigest()
     result = service.quarantine_track(
         track,
         guild_id=123,

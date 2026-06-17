@@ -78,10 +78,7 @@ def _validate_report_family(
     checks = validation.get("checks")
     if not isinstance(checks, list) or not checks:
         raise ArcadiaManifestError("Project validation checks are missing.")
-    if any(
-        not isinstance(check, Mapping) or check.get("status") != "pass"
-        for check in checks
-    ):
+    if any(not isinstance(check, Mapping) or check.get("status") != "pass" for check in checks):
         raise ArcadiaManifestError("Every project validation check must pass.")
 
     summary = _mapping(validation.get("summary"), "validation summary")
@@ -109,9 +106,7 @@ def _validate_report_family(
 
     if _integer(manifest.get("operation_count"), "operation_count") != len(operations):
         raise ArcadiaManifestError("Manifest operation count is inconsistent.")
-    if _integer(summary.get("quarantine_operations"), "quarantine_operations") != len(
-        operations
-    ):
+    if _integer(summary.get("quarantine_operations"), "quarantine_operations") != len(operations):
         raise ArcadiaManifestError("Validation operation count is inconsistent.")
 
     paths = [operation.relative_path for operation in operations]
@@ -289,19 +284,27 @@ def _text(value: object, label: str) -> str:
 def _integer(value: object, label: str) -> int:
     if isinstance(value, bool):
         raise ArcadiaManifestError(f"{label} must be an integer.")
-    try:
-        return int(value)
-    except (TypeError, ValueError) as exc:
-        raise ArcadiaManifestError(f"{label} must be an integer.") from exc
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError as exc:
+            raise ArcadiaManifestError(f"{label} must be an integer.") from exc
+    raise ArcadiaManifestError(f"{label} must be an integer.")
 
 
 def _number(value: object, label: str) -> float:
     if isinstance(value, bool):
         raise ArcadiaManifestError(f"{label} must be a number.")
-    try:
+    if isinstance(value, (int, float)):
         return float(value)
-    except (TypeError, ValueError) as exc:
-        raise ArcadiaManifestError(f"{label} must be a number.") from exc
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError as exc:
+            raise ArcadiaManifestError(f"{label} must be a number.") from exc
+    raise ArcadiaManifestError(f"{label} must be a number.")
 
 
 def _timestamp(value: object, label: str) -> str:

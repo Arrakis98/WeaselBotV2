@@ -17,12 +17,8 @@ from weasel_bot_v2.services.arcadia_quarantine import (
     ArcadiaQuarantineService,
 )
 
-_DEFAULT_MANIFEST_PATH = Path(
-    "/library_admin/manifests/music_quarantine_manifest.json"
-)
-_DEFAULT_VALIDATION_PATH = Path(
-    "/library_admin/manifests/music_project_validation.json"
-)
+_DEFAULT_MANIFEST_PATH = Path("/library_admin/manifests/music_quarantine_manifest.json")
+_DEFAULT_VALIDATION_PATH = Path("/library_admin/manifests/music_project_validation.json")
 
 
 class AdminCog(commands.Cog):
@@ -135,10 +131,7 @@ def format_manifest_preview(preview: ArcadiaQuarantinePreview) -> str:
         f"Already quarantined: {preview.already_quarantined}",
         f"Blocked: {len(preview.blocked)}",
         "Reasons: "
-        + ", ".join(
-            f"{reason}={count}"
-            for reason, count in sorted(preview.reason_counts.items())
-        ),
+        + ", ".join(f"{reason}={count}" for reason, count in sorted(preview.reason_counts.items())),
     ]
     if preview.blocked:
         lines.append("Blocked items:")

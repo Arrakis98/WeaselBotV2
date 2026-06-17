@@ -248,9 +248,7 @@ class QuarantineService:
             )
             builder.failed += 1
             suffix = " (rollback failed)" if rollback_failed else ""
-            builder.failures.append(
-                f"{_track_title(track)}: {exc.__class__.__name__}{suffix}"
-            )
+            builder.failures.append(f"{_track_title(track)}: {exc.__class__.__name__}{suffix}")
             return None
 
         builder.removed_from_queue += self._remove_from_future_queues(track.id)
