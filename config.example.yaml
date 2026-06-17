@@ -12,7 +12,7 @@ paths:
 
 library_moderation:
   admin_music_path: "/library_admin/music"
-  quarantine_path: "/library_admin/quarantine/super_disliked"
+  quarantine_path: "/library_admin/quarantine"
   auto_quarantine_superdislike: false
 
 database:
