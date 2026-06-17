@@ -114,6 +114,40 @@ class QuarantineRepository:
             ).fetchall()
         return [_record_from_row(row) for row in rows]
 
+    def list_active_records(self) -> list[QuarantineRecord]:
+        with self.database.connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT
+                    id,
+                    track_id,
+                    guild_id,
+                    requested_by_user_id,
+                    reason,
+                    original_relative_path,
+                    quarantine_relative_path,
+                    quarantined_at,
+                    restored_at,
+                    state
+                FROM track_quarantine
+                WHERE state = 'quarantined'
+                ORDER BY id ASC
+                """
+            ).fetchall()
+        return [_record_from_row(row) for row in rows]
+
+    def update_relative_path(self, record_id: int, relative_path: str) -> None:
+        with self.database.connect() as connection:
+            connection.execute(
+                """
+                UPDATE track_quarantine
+                SET quarantine_relative_path = ?
+                WHERE id = ? AND state = 'quarantined'
+                """,
+                (relative_path, record_id),
+            )
+            connection.commit()
+
     def mark_restored(self, record_id: int) -> None:
         with self.database.connect() as connection:
             connection.execute(
