@@ -17,6 +17,9 @@ from weasel_bot_v2.services.local_library import safe_relative_path
 
 LOGGER = logging.getLogger(__name__)
 
+_QUARANTINE_BUCKETS = {"superdislike", "mediatool"}
+_LEGACY_QUARANTINE_BUCKET = "super_disliked"
+
 
 @dataclass(frozen=True)
 class QuarantineMoveResult:
@@ -64,7 +67,12 @@ class QuarantineService:
         self.quarantine = QuarantineRepository(bot.database)
         self.ratings = RatingRepository(bot.database)
 
-    def preview_superdisliked(self, guild_id: int) -> PurgePreview:
+    def preview_superdisliked(
+        self,
+        guild_id: int,
+        *,
+        current_track_id: int | None = None,
+    ) -> PurgePreview:
         eligible: list[Track] = []
         cannot_move: list[str] = []
         already = 0
@@ -76,6 +84,9 @@ class QuarantineService:
                 continue
             if not track.is_available:
                 continue
+            if current_track_id is not None and track.id == current_track_id:
+                cannot_move.append(f"{_track_title(track)}: track is currently playing")
+                continue
             reason = self._cannot_move_reason(track)
             if reason:
                 cannot_move.append(f"{_track_title(track)}: {reason}")
@@ -85,7 +96,7 @@ class QuarantineService:
             eligible=tuple(eligible),
             already_quarantined=already,
             cannot_move=tuple(cannot_move),
-            destination=self.quarantine_path.as_posix(),
+            destination=(self.quarantine_path / "superdislike").as_posix(),
         )
 
     def quarantine_track(
@@ -96,6 +107,7 @@ class QuarantineService:
         requested_by_user_id: int,
         reason: str,
         expected_sha256: str | None = None,
+        bucket: str | None = None,
     ) -> QuarantineMoveResult:
         builder = _QuarantineResultBuilder()
         record = self._quarantine_one(
@@ -104,6 +116,7 @@ class QuarantineService:
             requested_by_user_id=requested_by_user_id,
             reason=reason,
             expected_sha256=expected_sha256,
+            bucket=bucket,
             builder=builder,
         )
         if record is not None:
@@ -135,6 +148,7 @@ class QuarantineService:
                 requested_by_user_id=requested_by_user_id,
                 reason="purge_superdisliked",
                 expected_sha256=None,
+                bucket="superdislike",
                 builder=builder,
             )
             if record is not None:
@@ -151,7 +165,7 @@ class QuarantineService:
         try:
             original_relative = safe_relative_path(record.original_relative_path)
             quarantine_relative = safe_relative_path(record.quarantine_relative_path)
-            source = _resolved_child(self.quarantine_path, quarantine_relative.as_posix())
+            source = self._quarantine_source(quarantine_relative)
             destination = _resolved_child(self.admin_music_path, original_relative.as_posix())
         except ValueError as exc:
             return RestoreResult(ok=False, message=f"Restore path validation failed: {exc}.")
@@ -175,6 +189,16 @@ class QuarantineService:
             record=restored,
         )
 
+    def _quarantine_source(self, relative: Path) -> Path:
+        direct = _resolved_child(self.quarantine_path, relative.as_posix())
+        if direct.is_file():
+            return direct
+        if relative.parts and relative.parts[0] in _QUARANTINE_BUCKETS:
+            return direct
+        legacy_relative = Path(_LEGACY_QUARANTINE_BUCKET, *relative.parts)
+        legacy = _resolved_child(self.quarantine_path, legacy_relative.as_posix())
+        return legacy if legacy.is_file() else direct
+
     def _quarantine_one(
         self,
         track: Track,
@@ -183,6 +207,7 @@ class QuarantineService:
         requested_by_user_id: int,
         reason: str,
         expected_sha256: str | None,
+        bucket: str | None,
         builder: _QuarantineResultBuilder,
     ) -> QuarantineRecord | None:
         if track.id is None or not track.relative_path:
@@ -195,8 +220,15 @@ class QuarantineService:
         try:
             relative = safe_relative_path(track.relative_path)
             source = _resolved_child(self.admin_music_path, relative.as_posix())
+            resolved_bucket = _validated_bucket(
+                bucket or quarantine_bucket_for_reason(reason)
+            )
+            destination_relative = Path(resolved_bucket, *relative.parts)
             destination = _collision_safe_path(
-                _resolved_child(self.quarantine_path, relative.as_posix())
+                _resolved_child(
+                    self.quarantine_path,
+                    destination_relative.as_posix(),
+                )
             )
         except ValueError as exc:
             builder.failed += 1
@@ -340,6 +372,17 @@ class _QuarantineResultBuilder:
             records=tuple(self.records),
             failures=tuple(self.failures),
         )
+
+
+def quarantine_bucket_for_reason(reason: str) -> str:
+    return "mediatool" if reason.startswith("arcadia_manifest:") else "superdislike"
+
+
+def _validated_bucket(bucket: str) -> str:
+    normalized = bucket.strip().casefold()
+    if normalized not in _QUARANTINE_BUCKETS:
+        raise ValueError("unsupported quarantine bucket")
+    return normalized
 
 
 def _resolved_child(root: Path, relative_path: str) -> Path:
