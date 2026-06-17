@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import logging
 import shutil
 from dataclasses import dataclass, field
@@ -7,7 +8,11 @@ from pathlib import Path
 from typing import Any
 
 from weasel_bot_v2.models import QuarantineRecord, Track
-from weasel_bot_v2.repositories import QuarantineRepository, RatingRepository, TrackRepository
+from weasel_bot_v2.repositories import (
+    QuarantineRepository,
+    RatingRepository,
+    TrackRepository,
+)
 from weasel_bot_v2.services.local_library import safe_relative_path
 
 LOGGER = logging.getLogger(__name__)
@@ -90,6 +95,7 @@ class QuarantineService:
         guild_id: int,
         requested_by_user_id: int,
         reason: str,
+        expected_sha256: str | None = None,
     ) -> QuarantineMoveResult:
         builder = _QuarantineResultBuilder()
         record = self._quarantine_one(
@@ -97,6 +103,7 @@ class QuarantineService:
             guild_id=guild_id,
             requested_by_user_id=requested_by_user_id,
             reason=reason,
+            expected_sha256=expected_sha256,
             builder=builder,
         )
         if record is not None:
@@ -127,6 +134,7 @@ class QuarantineService:
                 guild_id=guild_id,
                 requested_by_user_id=requested_by_user_id,
                 reason="purge_superdisliked",
+                expected_sha256=None,
                 builder=builder,
             )
             if record is not None:
@@ -174,6 +182,7 @@ class QuarantineService:
         guild_id: int,
         requested_by_user_id: int,
         reason: str,
+        expected_sha256: str | None,
         builder: _QuarantineResultBuilder,
     ) -> QuarantineRecord | None:
         if track.id is None or not track.relative_path:
@@ -198,14 +207,20 @@ class QuarantineService:
             builder.failed += 1
             builder.failures.append(f"{_track_title(track)}: source file is missing")
             return None
+        if expected_sha256 is not None:
+            actual_sha256 = _sha256_file(source)
+            if actual_sha256 != expected_sha256.casefold():
+                builder.failed += 1
+                builder.failures.append(f"{_track_title(track)}: source SHA-256 changed")
+                return None
 
+        availability_changed = False
         try:
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.move(source.as_posix(), destination.as_posix())
             self.tracks.set_available(track.id, False)
-            builder.removed_from_queue += self._remove_from_future_queues(track.id)
-            builder.moved += 1
-            return self.quarantine.create(
+            availability_changed = True
+            record = self.quarantine.create(
                 QuarantineRecord(
                     track_id=track.id,
                     guild_id=guild_id,
@@ -217,16 +232,52 @@ class QuarantineService:
                     ).as_posix(),
                 )
             )
-        except Exception as exc:  # noqa: BLE001 - moderation should report per-track failures.
+        except Exception as exc:  # noqa: BLE001 - moderation needs a safe rollback.
+            rollback_failed = self._rollback_failed_move(
+                track,
+                source=source,
+                destination=destination,
+                availability_changed=availability_changed,
+            )
             LOGGER.warning(
-                "Quarantine failed track_id=%s guild_id=%s error=%s",
+                "Quarantine failed track_id=%s guild_id=%s error=%s rollback_failed=%s",
                 track.id,
                 guild_id,
                 exc.__class__.__name__,
+                rollback_failed,
             )
             builder.failed += 1
-            builder.failures.append(f"{_track_title(track)}: {exc.__class__.__name__}")
+            suffix = " (rollback failed)" if rollback_failed else ""
+            builder.failures.append(
+                f"{_track_title(track)}: {exc.__class__.__name__}{suffix}"
+            )
             return None
+
+        builder.removed_from_queue += self._remove_from_future_queues(track.id)
+        builder.moved += 1
+        return record
+
+    def _rollback_failed_move(
+        self,
+        track: Track,
+        *,
+        source: Path,
+        destination: Path,
+        availability_changed: bool,
+    ) -> bool:
+        rollback_failed = False
+        try:
+            if destination.exists() and not source.exists():
+                source.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(destination.as_posix(), source.as_posix())
+        except Exception:  # noqa: BLE001 - the original failure is reported by the caller.
+            rollback_failed = True
+        if availability_changed and track.id is not None:
+            try:
+                self.tracks.set_available(track.id, True)
+            except Exception:  # noqa: BLE001 - retain rollback failure in the result.
+                rollback_failed = True
+        return rollback_failed
 
     def _cannot_move_reason(self, track: Track) -> str | None:
         if track.id is None or not track.relative_path:
@@ -242,7 +293,12 @@ class QuarantineService:
             return "source path is not a file"
         return None
 
-    def _superdisliked_tracks(self, guild_id: int, *, available_only: bool = True) -> list[Track]:
+    def _superdisliked_tracks(
+        self,
+        guild_id: int,
+        *,
+        available_only: bool = True,
+    ) -> list[Track]:
         track_ids = self.ratings.track_ids_for_rating(guild_id, "superdislike")
         tracks = [self.tracks.get(track_id) for track_id in track_ids]
         return [
@@ -255,7 +311,14 @@ class QuarantineService:
         removed = 0
         states = getattr(self.bot.player_states, "_states", {})
         for state in list(states.values()):
-            removed += state.remove_upcoming_track(track_id)
+            try:
+                removed += state.remove_upcoming_track(track_id)
+            except Exception as exc:  # noqa: BLE001 - a queue must not undo a safe move.
+                LOGGER.warning(
+                    "Failed to remove quarantined track_id=%s from a queue: %s",
+                    track_id,
+                    exc.__class__.__name__,
+                )
         return removed
 
 
@@ -303,6 +366,14 @@ def _collision_safe_path(path: Path) -> Path:
         if not candidate.exists():
             return candidate
         counter += 1
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _track_title(track: Track) -> str:
