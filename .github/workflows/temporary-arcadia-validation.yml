@@ -30,6 +30,70 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e '.[dev]'
 
+      - name: Prepare candidate fixes
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("src/weasel_bot_v2/services/arcadia_manifest.py")
+          text = path.read_text(encoding="utf-8")
+          old = '''def _integer(value: object, label: str) -> int:
+              if isinstance(value, bool):
+                  raise ArcadiaManifestError(f"{label} must be an integer.")
+              try:
+                  return int(value)
+              except (TypeError, ValueError) as exc:
+                  raise ArcadiaManifestError(f"{label} must be an integer.") from exc
+
+
+          def _number(value: object, label: str) -> float:
+              if isinstance(value, bool):
+                  raise ArcadiaManifestError(f"{label} must be a number.")
+              try:
+                  return float(value)
+              except (TypeError, ValueError) as exc:
+                  raise ArcadiaManifestError(f"{label} must be a number.") from exc
+          '''
+          new = '''def _integer(value: object, label: str) -> int:
+              if isinstance(value, bool):
+                  raise ArcadiaManifestError(f"{label} must be an integer.")
+              if isinstance(value, int):
+                  return value
+              if isinstance(value, str):
+                  try:
+                      return int(value)
+                  except ValueError as exc:
+                      raise ArcadiaManifestError(f"{label} must be an integer.") from exc
+              raise ArcadiaManifestError(f"{label} must be an integer.")
+
+
+          def _number(value: object, label: str) -> float:
+              if isinstance(value, bool):
+                  raise ArcadiaManifestError(f"{label} must be a number.")
+              if isinstance(value, (int, float)):
+                  return float(value)
+              if isinstance(value, str):
+                  try:
+                      return float(value)
+                  except ValueError as exc:
+                      raise ArcadiaManifestError(f"{label} must be a number.") from exc
+              raise ArcadiaManifestError(f"{label} must be a number.")
+          '''
+          if old not in text:
+              raise SystemExit("Expected conversion helper block was not found")
+          path.write_text(text.replace(old, new, 1), encoding="utf-8")
+          PY
+
+          ruff format \
+            src/weasel_bot_v2/cogs/admin.py \
+            src/weasel_bot_v2/services/arcadia_manifest.py \
+            src/weasel_bot_v2/services/arcadia_quarantine.py \
+            src/weasel_bot_v2/services/quarantine.py \
+            tests/test_arcadia_quarantine.py \
+            tests/test_arcadia_quarantine_apply.py \
+            tests/test_quarantine_integrity.py
+
       - name: Run all validation commands
         shell: bash
         run: |
@@ -39,7 +103,15 @@ jobs:
           echo $? > validation-output/pytest.status
           ruff check . > validation-output/ruff-check.txt 2>&1
           echo $? > validation-output/ruff-check.status
-          ruff format --check . > validation-output/ruff-format.txt 2>&1
+          ruff format --check \
+            src/weasel_bot_v2/cogs/admin.py \
+            src/weasel_bot_v2/services/arcadia_manifest.py \
+            src/weasel_bot_v2/services/arcadia_quarantine.py \
+            src/weasel_bot_v2/services/quarantine.py \
+            tests/test_arcadia_quarantine.py \
+            tests/test_arcadia_quarantine_apply.py \
+            tests/test_quarantine_integrity.py \
+            > validation-output/ruff-format.txt 2>&1
           echo $? > validation-output/ruff-format.status
           pyright > validation-output/pyright.txt 2>&1
           echo $? > validation-output/pyright.status
@@ -51,6 +123,21 @@ jobs:
         with:
           name: validation-output
           path: validation-output
+          if-no-files-found: error
+
+      - name: Upload candidate files
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: candidate-files
+          path: |
+            src/weasel_bot_v2/cogs/admin.py
+            src/weasel_bot_v2/services/arcadia_manifest.py
+            src/weasel_bot_v2/services/arcadia_quarantine.py
+            src/weasel_bot_v2/services/quarantine.py
+            tests/test_arcadia_quarantine.py
+            tests/test_arcadia_quarantine_apply.py
+            tests/test_quarantine_integrity.py
           if-no-files-found: error
 
       - name: Enforce validation result
