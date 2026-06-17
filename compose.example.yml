@@ -21,7 +21,7 @@ services:
       - ${MUSIC_LIBRARY_HOST_PATH:-./music}:/music:ro
       # Bot-only writable management mounts for reversible quarantine operations.
       - ${MUSIC_LIBRARY_HOST_PATH:-./music}:/library_admin/music:rw
-      - ${QUARANTINE_HOST_PATH:-./quarantine/super_disliked}:/library_admin/quarantine/super_disliked:rw
+      - ${QUARANTINE_HOST_PATH:-./quarantine}:/library_admin/quarantine:rw
     restart: unless-stopped
 
   lavalink:
