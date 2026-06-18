@@ -141,27 +141,27 @@ replace_once(
     '    assert (quarantine_root / "superdislike/Artist/current.mp3").exists()\n',
 )
 
-# safe_relative_path() returns PurePosixPath, not a filesystem Path.
+# safe_relative_path() returns a pure path, not a filesystem Path.
 replace_once(
     "src/weasel_bot_v2/services/quarantine.py",
     "from pathlib import Path\n",
-    "from pathlib import Path, PurePosixPath\n",
+    "from pathlib import Path, PurePath\n",
 )
 replace_once(
     "src/weasel_bot_v2/services/quarantine.py",
     "    def _quarantine_source(self, relative: Path) -> Path:\n",
-    "    def _quarantine_source(self, relative: PurePosixPath) -> Path:\n",
+    "    def _quarantine_source(self, relative: PurePath) -> Path:\n",
 )
 replace_once(
     "src/weasel_bot_v2/services/quarantine_layout.py",
     "from pathlib import Path\n",
-    "from pathlib import Path, PurePosixPath\n",
+    "from pathlib import Path, PurePath\n",
 )
 replace_once(
     "src/weasel_bot_v2/services/quarantine_layout.py",
     "    def _legacy_source_relative(self, stored_relative: Path) -> Path | None:\n",
     "    def _legacy_source_relative(\n"
     "        self,\n"
-    "        stored_relative: PurePosixPath,\n"
-    "    ) -> PurePosixPath | None:\n",
+    "        stored_relative: PurePath,\n"
+    "    ) -> PurePath | None:\n",
 )
