@@ -147,7 +147,7 @@ async def test_slash_superdislike_auto_quarantine_runs_after_one_skip(
     assert stored is not None and stored.is_available is False
     assert record is not None and record.reason == "auto_superdislike"
     assert not track_path.exists()
-    assert (quarantine_root / "Artist/current.mp3").exists()
+    assert (quarantine_root / "superdislike/Artist/current.mp3").exists()
 
 
 @pytest.mark.asyncio

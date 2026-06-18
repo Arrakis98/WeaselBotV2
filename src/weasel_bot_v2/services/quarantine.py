@@ -4,7 +4,7 @@ import hashlib
 import logging
 import shutil
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePath
 from typing import Any
 
 from weasel_bot_v2.models import QuarantineRecord, Track
@@ -189,7 +189,7 @@ class QuarantineService:
             record=restored,
         )
 
-    def _quarantine_source(self, relative: Path) -> Path:
+    def _quarantine_source(self, relative: PurePath) -> Path:
         direct = _resolved_child(self.quarantine_path, relative.as_posix())
         if direct.is_file():
             return direct
@@ -220,9 +220,7 @@ class QuarantineService:
         try:
             relative = safe_relative_path(track.relative_path)
             source = _resolved_child(self.admin_music_path, relative.as_posix())
-            resolved_bucket = _validated_bucket(
-                bucket or quarantine_bucket_for_reason(reason)
-            )
+            resolved_bucket = _validated_bucket(bucket or quarantine_bucket_for_reason(reason))
             destination_relative = Path(resolved_bucket, *relative.parts)
             destination = _collision_safe_path(
                 _resolved_child(

@@ -58,7 +58,7 @@ must keep read-only access to it.
 
 For reversible library moderation, the bot can also receive a separate writable
 admin view of the same active library at `/library_admin/music` and a writable
-quarantine destination at `/library_admin/quarantine/super_disliked`. Lavalink
+quarantine destination at `/library_admin/quarantine`. Lavalink
 does not receive writable moderation mounts. These container paths are
 configurable through `library_moderation`; private host paths belong only in
 ignored deployment files.

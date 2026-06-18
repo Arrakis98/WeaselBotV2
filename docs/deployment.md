@@ -26,7 +26,7 @@ The intended local stack is:
   Lavalink containers.
 - Optional bot-only writable admin music view at `/library_admin/music` and
   writable quarantine destination at
-  `/library_admin/quarantine/super_disliked` for reversible SuperDislike
+  `/library_admin/quarantine` for reversible SuperDislike
   moderation.
 
 Do not expose Lavalink publicly by default. The bot should reach Lavalink on the
@@ -40,7 +40,7 @@ safe placeholder. If your real host library lives elsewhere, put that host path
 only in a private ignored `.env` or compose override and still mount it as
 `/music:ro` in both services. The bot-only moderation mounts should point to the
 same active library host path for `/library_admin/music:rw` and to a separate
-quarantine host path for `/library_admin/quarantine/super_disliked:rw`.
+quarantine host path for `/library_admin/quarantine:rw`.
 
 ## Phase 1 Local Docker Stack
 
@@ -61,7 +61,7 @@ LAVALINK_PASSWORD=choose-a-local-password
 LAVALINK_HOST=lavalink
 LAVALINK_PORT=2333
 MUSIC_LIBRARY_HOST_PATH=./music
-QUARANTINE_HOST_PATH=./quarantine/super_disliked
+QUARANTINE_HOST_PATH=./quarantine
 WEASEL_AUTO_QUARANTINE_SUPERDISLIKE=false
 ```
 
@@ -190,3 +190,13 @@ Not acceptable in this repository:
 - Keep database backups outside Git.
 - Keep music libraries mounted read-only.
 - Review diffs before publishing changes.
+
+## Unified quarantine deployment
+
+Mount the whole private host quarantine directory at
+`/library_admin/quarantine:rw` for the bot only. New files are routed into
+`superdislike/` or `mediatool/`.
+
+When upgrading from the old inner `super_disliked` mount, expose its parent at
+the new root, rebuild the bot, preview `/quarantine_layout`, and apply it only
+when no item is blocked. Then preview `/purge_quarantine` before any execution.

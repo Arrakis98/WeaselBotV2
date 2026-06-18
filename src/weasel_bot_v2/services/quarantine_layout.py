@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import shutil
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePath
 from typing import Any
 
 from weasel_bot_v2.models import QuarantineRecord
@@ -48,9 +48,7 @@ class QuarantineLayoutService:
     """Move legacy quarantine records into source-specific subdirectories."""
 
     def __init__(self, bot: Any, *, quarantine_path: Path | None = None) -> None:
-        self.quarantine_path = (
-            quarantine_path or bot.settings.library_moderation.quarantine_path
-        )
+        self.quarantine_path = quarantine_path or bot.settings.library_moderation.quarantine_path
         self.records = QuarantineRepository(bot.database)
 
     def preview(self) -> QuarantineLayoutPreview:
@@ -135,7 +133,10 @@ class QuarantineLayoutService:
             failures=tuple(failures),
         )
 
-    def _legacy_source_relative(self, stored_relative: Path) -> Path | None:
+    def _legacy_source_relative(
+        self,
+        stored_relative: PurePath,
+    ) -> PurePath | None:
         direct = _resolved_child(self.quarantine_path, stored_relative.as_posix())
         if direct.is_file():
             return stored_relative

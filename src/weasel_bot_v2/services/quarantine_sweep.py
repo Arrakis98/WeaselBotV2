@@ -31,10 +31,7 @@ class QuarantineSweepPreview:
 
     @property
     def already_quarantined(self) -> int:
-        return (
-            self.superdisliked.already_quarantined
-            + self.mediatool.already_quarantined
-        )
+        return self.superdisliked.already_quarantined + self.mediatool.already_quarantined
 
     @property
     def ok(self) -> bool:
@@ -53,10 +50,7 @@ class QuarantineSweepResult:
 
     @property
     def already_quarantined(self) -> int:
-        return (
-            self.superdisliked.already_quarantined
-            + self.mediatool.already_quarantined
-        )
+        return self.superdisliked.already_quarantined + self.mediatool.already_quarantined
 
     @property
     def failed(self) -> int:
@@ -64,10 +58,7 @@ class QuarantineSweepResult:
 
     @property
     def removed_from_queue(self) -> int:
-        return (
-            self.superdisliked.removed_from_queue
-            + self.mediatool.removed_from_queue
-        )
+        return self.superdisliked.removed_from_queue + self.mediatool.removed_from_queue
 
     @property
     def failures(self) -> tuple[str, ...]:

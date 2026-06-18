@@ -223,7 +223,7 @@ SuperDislike library moderation must move files to a reversible quarantine; it
 must never permanently delete music files. The active library stays read-only at
 `/music` for both bot and Lavalink. The bot alone may receive configurable
 writable moderation mounts at `/library_admin/music` and
-`/library_admin/quarantine/super_disliked`.
+`/library_admin/quarantine`.
 
 The database stores quarantine audit rows in `track_quarantine` and marks moved
 tracks unavailable through `tracks.is_available`. Local playback and `/play_all`
@@ -267,3 +267,12 @@ administrator/owner restricted. The legacy `play_all_artist_exclusions` and
 `play_all_policy` tables remain in SQLite for backward compatibility and
 possible future presets, but their old Discord policy-management commands are no
 longer registered.
+
+## Unified quarantine root with source buckets
+
+- Use one writable root: `/library_admin/quarantine`.
+- Route bot ratings to `superdislike/` and MediaTool decisions to `mediatool/`.
+- Keep SQLite authoritative for audit and restoration.
+- Migrate legacy active records explicitly with `/quarantine_layout`.
+- Let `/purge_quarantine` process both current candidate sources.
+- Never interpret purge as permanent deletion.
