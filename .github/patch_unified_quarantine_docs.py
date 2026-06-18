@@ -133,3 +133,35 @@ append_once(
 - Let `/purge_quarantine` process both current candidate sources.
 - Never interpret purge as permanent deletion.""",
 )
+
+# Keep validation expectations aligned with the new source-specific layout.
+replace_once(
+    "tests/test_rating_skip_actions.py",
+    '    assert (quarantine_root / "Artist/current.mp3").exists()\n',
+    '    assert (quarantine_root / "superdislike/Artist/current.mp3").exists()\n',
+)
+
+# safe_relative_path() returns PurePosixPath, not a filesystem Path.
+replace_once(
+    "src/weasel_bot_v2/services/quarantine.py",
+    "from pathlib import Path\n",
+    "from pathlib import Path, PurePosixPath\n",
+)
+replace_once(
+    "src/weasel_bot_v2/services/quarantine.py",
+    "    def _quarantine_source(self, relative: Path) -> Path:\n",
+    "    def _quarantine_source(self, relative: PurePosixPath) -> Path:\n",
+)
+replace_once(
+    "src/weasel_bot_v2/services/quarantine_layout.py",
+    "from pathlib import Path\n",
+    "from pathlib import Path, PurePosixPath\n",
+)
+replace_once(
+    "src/weasel_bot_v2/services/quarantine_layout.py",
+    "    def _legacy_source_relative(self, stored_relative: Path) -> Path | None:\n",
+    "    def _legacy_source_relative(\n"
+    "        self,\n"
+    "        stored_relative: PurePosixPath,\n"
+    "    ) -> PurePosixPath | None:\n",
+)
