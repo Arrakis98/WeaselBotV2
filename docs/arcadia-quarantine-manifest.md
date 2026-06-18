@@ -78,3 +78,18 @@ Every successful move uses the existing quarantine journal and remains visible t
 The quarantine service rolls a file back to its original location if the database record cannot be written after the move. Applied records include the manifest digest prefix and reason, which keeps repeated executions idempotent and auditable.
 
 Permanent deletion is deliberately outside this workflow.
+
+## Unified quarantine root
+
+The bot owns `/library_admin/quarantine` and separates new files into
+`superdislike/` and `mediatool/`. Both use the same SQLite audit journal and
+restoration commands.
+
+After changing an old deployment from the `super_disliked` mount to the whole
+quarantine root, run `/quarantine_layout execute:false` and then
+`/quarantine_layout execute:true`. This migrates active legacy files and their
+stored SQLite paths safely.
+
+`/purge_quarantine execute:false|true` covers both SuperDislike and approved
+MediaTool candidates. Purge always means reversible quarantine, never permanent
+deletion.

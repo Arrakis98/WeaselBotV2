@@ -37,7 +37,7 @@ class BotConfig:
 @dataclass(frozen=True)
 class LibraryModerationConfig:
     admin_music_path: Path = Path("/library_admin/music")
-    quarantine_path: Path = Path("/library_admin/quarantine/super_disliked")
+    quarantine_path: Path = Path("/library_admin/quarantine")
     auto_quarantine_superdislike: bool = False
 
 
@@ -195,7 +195,7 @@ def _load_library_moderation_config(
         ),
         quarantine_path=_path_value(
             moderation.get("quarantine_path"),
-            Path("/library_admin/quarantine/super_disliked"),
+            Path("/library_admin/quarantine"),
             base_dir,
         ),
         auto_quarantine_superdislike=_bool_value(

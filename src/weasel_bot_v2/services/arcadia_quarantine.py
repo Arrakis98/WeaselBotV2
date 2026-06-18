@@ -153,6 +153,7 @@ class ArcadiaQuarantineService:
                 requested_by_user_id=requested_by_user_id,
                 reason=f"arcadia_manifest:{operation.reason}:{digest_prefix}",
                 expected_sha256=operation.source_sha256,
+                bucket="mediatool",
             )
             moved += result.moved
             failed += result.failed

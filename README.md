@@ -40,6 +40,12 @@ Music Tools quarantine reports to the existing reversible moderation service.
 - `src/` package layout with `pyproject.toml`.
 - `pytest`, `ruff`, and `pyright` for tests, linting/formatting, and type checking.
 
+## Repository and package names
+
+The usual self-hosted checkout directory is `~/weasel-bot-v2`. The Python
+package and module name is `weasel_bot_v2`, so the container starts it with
+`python -m weasel_bot_v2`. Both names are intentional.
+
 ## Repository Safety
 
 Use example files as templates:
@@ -119,6 +125,8 @@ Expected Discord slash commands after the bot logs in:
 - `/reset_track_volume`
 - `/controls`
 - `/purge_superdisliked`
+- `/purge_quarantine`
+- `/quarantine_layout`
 - `/quarantine_list`
 - `/restore_quarantined`
 - `/quarantine_manifest`
@@ -174,25 +182,19 @@ No mascot GIF or spritesheet is integrated yet; optional artwork support remains
 a documented extension point for a later live-tested phase. If Components V2
 rendering fails, the bot falls back to the existing embed-based panel.
 
-SuperDislike library moderation is available as a reversible MVP. It is disabled
-for automatic rating actions by default. When enabled with
-`WEASEL_AUTO_QUARANTINE_SUPERDISLIKE=true` or
-`library_moderation.auto_quarantine_superdislike: true`, SuperDislike saves the
-rating, skips through the existing playback action, then moves the captured
-previous local file from the writable admin library mount to the configured
-quarantine mount. Administrative `/purge_superdisliked execute:false` previews
-eligible SuperDisliked local tracks without filesystem changes, and
-`execute:true` moves them instead of deleting them. `/quarantine_list` and
-`/restore_quarantined` provide the minimal reversible audit workflow. Discord
-output uses container-relative paths only and never host paths.
+The bot owns one writable quarantine root at `/library_admin/quarantine`.
+SuperDislike records are stored below `superdislike/`; approved Arcadia Music
+Tools records are stored below `mediatool/`. SQLite is the shared audit and
+restore journal.
 
-`/quarantine_manifest execute:false` loads one approved Arcadia Music Tools
-manifest and its matching successful validation report from a private read-only
-runtime mount. It rejects stale paths, changed hashes, unavailable references,
-currently playing tracks, inconsistent reports, and unsafe report families before
-any move starts. `execute:true` rechecks each SHA-256 immediately before using the
-same reversible quarantine journal. Repeated execution is idempotent, and every
-moved file remains restorable through `/restore_quarantined`.
+`/purge_superdisliked` handles SuperDislikes only and `/quarantine_manifest`
+handles the approved MediaTool report only. `/purge_quarantine` previews or
+applies both sources in one operation. Purge means a reversible move into
+quarantine, never permanent deletion.
+
+Upgrades from the legacy `super_disliked` mount use `/quarantine_layout` first in
+preview mode and then with `execute:true`. `/quarantine_list` and
+`/restore_quarantined` work across both source buckets.
 
 `/my_ratings` shows the invoking user's saved ratings for the current server
 only, with an optional rating filter and page number. The output is ephemeral and

@@ -22,6 +22,7 @@ COGS = (
     "weasel_bot_v2.cogs.audio_status",
     "weasel_bot_v2.cogs.debug",
     "weasel_bot_v2.cogs.music",
+    "weasel_bot_v2.cogs.quarantine_admin",
 )
 
 

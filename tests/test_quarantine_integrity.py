@@ -34,7 +34,7 @@ def test_quarantine_rejects_changed_sha256(tmp_path: Path) -> None:
     assert result.moved == 0
     assert stored is not None and stored.is_available is True
     assert (admin_root / track.relative_path).is_file()
-    assert not (quarantine_root / track.relative_path).exists()
+    assert not (quarantine_root / "superdislike" / track.relative_path).exists()
 
 
 def test_quarantine_rolls_back_when_record_creation_fails(
@@ -66,7 +66,7 @@ def test_quarantine_rolls_back_when_record_creation_fails(
     assert result.moved == 0
     assert stored is not None and stored.is_available is True
     assert (admin_root / track.relative_path).is_file()
-    assert not (quarantine_root / track.relative_path).exists()
+    assert not (quarantine_root / "superdislike" / track.relative_path).exists()
 
 
 def _bot(tmp_path: Path) -> tuple[Any, SQLiteDatabase, Path, Path]:

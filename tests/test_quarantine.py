@@ -27,7 +27,22 @@ def test_quarantine_preview_does_not_move_files(tmp_path: Path) -> None:
 
     assert len(preview.eligible) == 1
     assert (admin_root / "Artist/song.mp3").exists()
-    assert not (quarantine_root / "Artist/song.mp3").exists()
+    assert not (quarantine_root / "superdislike/Artist/song.mp3").exists()
+
+
+def test_quarantine_preview_blocks_current_track(tmp_path: Path) -> None:
+    bot, database, admin_root, _ = _bot(tmp_path)
+    track = _track(database, admin_root, "Artist/song.mp3")
+    _superdislike(database, track)
+    assert track.id is not None
+
+    preview = QuarantineService(bot).preview_superdisliked(
+        123,
+        current_track_id=track.id,
+    )
+
+    assert preview.eligible == ()
+    assert "currently playing" in preview.cannot_move[0]
 
 
 def test_quarantine_execute_moves_indexed_file_and_removes_future_queue(tmp_path: Path) -> None:
@@ -36,14 +51,17 @@ def test_quarantine_execute_moves_indexed_file_and_removes_future_queue(tmp_path
     _superdislike(database, track)
     bot.player_states.get_or_create(123).upcoming = [track, track]
 
-    result = QuarantineService(bot).purge_superdisliked(guild_id=123, requested_by_user_id=42)
+    result = QuarantineService(bot).purge_superdisliked(
+        guild_id=123,
+        requested_by_user_id=42,
+    )
 
     stored = TrackRepository(database).get(track.id or 0)
     assert result.moved == 1
     assert result.removed_from_queue == 2
     assert stored is not None and stored.is_available is False
     assert not (admin_root / "Artist/song.mp3").exists()
-    assert (quarantine_root / "Artist/song.mp3").exists()
+    assert (quarantine_root / "superdislike/Artist/song.mp3").exists()
     assert RatingRepository(database).get_rating(123, 42, track.id or 0) is not None
     assert QuarantineRepository(database).active_for_track(track.id or 0) is not None
     indexed_tracks = LocalLibraryService(
@@ -55,17 +73,23 @@ def test_quarantine_execute_moves_indexed_file_and_removes_future_queue(tmp_path
 
 def test_quarantine_does_not_move_same_track_twice_and_handles_collision(tmp_path: Path) -> None:
     bot, database, admin_root, quarantine_root = _bot(tmp_path)
-    existing = quarantine_root / "Artist/song.mp3"
+    existing = quarantine_root / "superdislike/Artist/song.mp3"
     existing.parent.mkdir(parents=True)
     existing.write_text("occupied", encoding="utf-8")
     track = _track(database, admin_root, "Artist/song.mp3")
     _superdislike(database, track)
 
-    first = QuarantineService(bot).purge_superdisliked(guild_id=123, requested_by_user_id=42)
-    second = QuarantineService(bot).purge_superdisliked(guild_id=123, requested_by_user_id=42)
+    first = QuarantineService(bot).purge_superdisliked(
+        guild_id=123,
+        requested_by_user_id=42,
+    )
+    second = QuarantineService(bot).purge_superdisliked(
+        guild_id=123,
+        requested_by_user_id=42,
+    )
 
     assert first.moved == 1
-    assert (quarantine_root / "Artist/song-1.mp3").exists()
+    assert (quarantine_root / "superdislike/Artist/song-1.mp3").exists()
     assert second.already_quarantined == 1
     assert second.moved == 0
 
@@ -74,7 +98,10 @@ def test_restore_returns_file_and_makes_track_playable(tmp_path: Path) -> None:
     bot, database, admin_root, quarantine_root = _bot(tmp_path)
     track = _track(database, admin_root, "Artist/song.mp3")
     _superdislike(database, track)
-    moved = QuarantineService(bot).purge_superdisliked(guild_id=123, requested_by_user_id=42)
+    moved = QuarantineService(bot).purge_superdisliked(
+        guild_id=123,
+        requested_by_user_id=42,
+    )
     record = moved.records[0]
 
     restored = QuarantineService(bot).restore(record.id or 0)
@@ -83,7 +110,7 @@ def test_restore_returns_file_and_makes_track_playable(tmp_path: Path) -> None:
     assert restored.ok is True
     assert stored is not None and stored.is_available is True
     assert (admin_root / "Artist/song.mp3").exists()
-    assert not (quarantine_root / "Artist/song.mp3").exists()
+    assert not (quarantine_root / "superdislike/Artist/song.mp3").exists()
     assert QuarantineRepository(database).get(record.id or 0).state == "restored"  # type: ignore[union-attr]
 
 
