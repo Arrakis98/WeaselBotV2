@@ -17,6 +17,8 @@ runtime/
 data/
 *.db
 *.sqlite
+*.pre-organization-remap-*.bak
+*.organization-remap-*.json
 cookies.txt
 application.local.yml
 
