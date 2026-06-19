@@ -276,3 +276,26 @@ longer registered.
 - Migrate legacy active records explicitly with `/quarantine_layout`.
 - Let `/purge_quarantine` process both current candidate sources.
 - Never interpret purge as permanent deletion.
+
+## ADR-0017: Offline identity-preserving path reorganization
+
+- Status: Accepted
+- Date: 2026-06-19
+
+An externally reorganized local library must not be scanned until its existing
+SQLite index has been remapped offline. Because local relative paths currently
+serve as both `tracks.source_id` and `tracks.relative_path`, scanning first would
+create replacement rows and detach user data from its stable track IDs.
+
+The offline migration strictly validates Arcadia's approved organization apply
+manifest, terminal journal, destination paths, and file hashes. Preview is
+read-only and creates no filesystem entries. Execution requires exact full
+manifest and database digests, an offline exclusive lock, and a verified backup.
+It updates every matching `tracks` row by primary key in one SQLite transaction
+and verifies foreign keys and dependent rows before commit and after commit.
+
+The migration preserves `tracks.id`, curated title and artist, duration,
+creation time, ratings, volume overrides, playlist items, play history,
+quarantine history, and play-all exceptions. Only identity paths,
+path-derived/index metadata, file stat metadata, indexing time, and availability
+are refreshed. Audio files are validation-only inputs and are never modified.
