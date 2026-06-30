@@ -31,6 +31,14 @@ SQLite is the first persistent storage target. It should store bot data such as:
 
 Database files are local runtime data and must not be committed.
 
+Bulk path reorganizations require an offline index migration before the scanner
+runs. The migration treats Arcadia's approved apply manifest and terminal
+`applied` journal as immutable authorization, verifies every destination file,
+and changes `tracks.source_id` plus path-derived metadata in place. Track primary
+keys and all dependent foreign keys remain unchanged. Execution uses a verified
+pre-mutation backup and one exclusive SQLite transaction; media files remain
+read-only inputs.
+
 Phase 2 uses a small project-owned SQLite layer under `weasel_bot_v2.database`.
 The database path comes from configuration and defaults to `data/weasel.db` for
 local development. Tests must use temporary SQLite files only.

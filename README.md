@@ -74,6 +74,7 @@ Create local private files when needed, but do not commit them:
 - [User Flows](docs/user-flows.md)
 - [Deployment Notes](docs/deployment.md)
 - [Arcadia Quarantine Manifest](docs/arcadia-quarantine-manifest.md)
+- [Organization Index Migration](docs/organization-index-migration.md)
 - [Chaos Mode](docs/chaos-mode.md)
 
 ## Phase 1 Local Development
@@ -224,3 +225,19 @@ and Lavalink. The bot also receives a least-privilege writable admin view at
 `/library_admin/music` plus a writable quarantine destination at
 `/library_admin/quarantine/super_disliked`; Lavalink does not receive those
 writable mounts. Approved Arcadia reports are mounted read-only for the bot only.
+
+## Library reorganization safety
+
+Do not restart the bot or run `/library_scan` immediately after an external bulk
+library reorganization. Local paths are track identities in the current index, so
+a normal scan would create new track IDs and strand ratings, volume presets,
+playlists, history, quarantine history, and play-all exceptions on the old IDs.
+
+Use the offline identity-preserving migration documented in
+[docs/organization-index-migration.md](docs/organization-index-migration.md).
+Run its side-effect-free preview first, then execute only with the exact manifest
+and database SHA-256 confirmations. Execution verifies the completed Arcadia
+journal and organized files, creates a verified database backup, and updates the
+existing track rows in one transaction. It never modifies audio files. Restart
+the bot and run `/library_scan` only after the migration report and post-migration
+preview are clean.
