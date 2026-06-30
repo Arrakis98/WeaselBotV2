@@ -67,8 +67,25 @@ def test_quarantine_execute_moves_indexed_file_and_removes_future_queue(tmp_path
     indexed_tracks = LocalLibraryService(
         admin_root,
         TrackRepository(database),
-    ).list_indexed_mp3_tracks()
+    ).list_play_all_eligible_tracks()
     assert indexed_tracks == []
+
+
+def test_quarantine_execute_accepts_opus_tracks(tmp_path: Path) -> None:
+    bot, database, admin_root, quarantine_root = _bot(tmp_path)
+    track = _track(database, admin_root, "Artist/song.opus")
+    _superdislike(database, track)
+
+    result = QuarantineService(bot).purge_superdisliked(
+        guild_id=123,
+        requested_by_user_id=42,
+    )
+
+    stored = TrackRepository(database).get(track.id or 0)
+    assert result.moved == 1
+    assert stored is not None and stored.is_available is False
+    assert not (admin_root / "Artist/song.opus").exists()
+    assert (quarantine_root / "superdislike/Artist/song.opus").exists()
 
 
 def test_quarantine_does_not_move_same_track_twice_and_handles_collision(tmp_path: Path) -> None:
@@ -172,7 +189,7 @@ def _track(database: SQLiteDatabase, root: Path, relative_path: str) -> Track:
             file_name=Path(relative_path).name,
             display_title=Path(relative_path).stem,
             artist_guess="Artist",
-            extension=".mp3",
+            extension=Path(relative_path).suffix.lower(),
         )
     )
 

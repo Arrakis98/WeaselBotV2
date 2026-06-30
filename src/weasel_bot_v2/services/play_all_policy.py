@@ -14,7 +14,11 @@ from weasel_bot_v2.repositories import (
     TrackRepository,
     UserRepository,
 )
-from weasel_bot_v2.services.local_library import LocalLibraryService, normalize_search_text
+from weasel_bot_v2.services.local_library import (
+    PLAY_ALL_AUDIO_EXTENSIONS,
+    LocalLibraryService,
+    normalize_search_text,
+)
 
 UNKNOWN_ARTIST = "Divers"
 
@@ -43,7 +47,7 @@ class PlayAllPolicySummary:
 
 @dataclass(frozen=True)
 class PlayAllEligiblePool:
-    total_indexed_mp3: int
+    total_indexed_play_all: int
     eligible_tracks: tuple[Track, ...]
     excluded_artists: tuple[str, ...] = ()
 
@@ -73,7 +77,7 @@ class PlayAllPolicyService:
         self.library = library
 
     def eligible_tracks_for_play_all(self, guild_id: int) -> list[Track]:
-        tracks = self.library.list_indexed_mp3_tracks()
+        tracks = self.library.list_play_all_eligible_tracks()
         return list(self.filter_tracks_for_play_all(guild_id, tracks).eligible_tracks)
 
     def filter_tracks_for_play_all(
@@ -96,12 +100,10 @@ class PlayAllPolicyService:
             exceptions_enabled = use_exceptions is not False
         if not exclusions:
             eligible = [
-                track
-                for track in tracks
-                if track.is_available and (track.extension or "").casefold() == ".mp3"
+                track for track in tracks if track.is_available and _is_play_all_extension(track)
             ]
             return PlayAllEligiblePool(
-                total_indexed_mp3=len(tracks),
+                total_indexed_play_all=len(tracks),
                 eligible_tracks=tuple(eligible),
             )
 
@@ -113,7 +115,7 @@ class PlayAllPolicyService:
 
         eligible: list[Track] = []
         for track in tracks:
-            if not track.is_available or (track.extension or "").casefold() != ".mp3":
+            if not track.is_available or not _is_play_all_extension(track):
                 continue
             normalized_artist = normalized_artist_for_track(track)
             if normalized_artist not in exclusions:
@@ -122,7 +124,7 @@ class PlayAllPolicyService:
             if track.id is not None and track.id in exception_ids:
                 eligible.append(track)
         return PlayAllEligiblePool(
-            total_indexed_mp3=len(tracks),
+            total_indexed_play_all=len(tracks),
             eligible_tracks=tuple(eligible),
             excluded_artists=tuple(sorted(exclusions)),
         )
@@ -132,7 +134,7 @@ class PlayAllPolicyService:
         if not requested:
             return InvocationArtistResolution(ok=True)
 
-        groups = _artist_groups(self.library.list_indexed_mp3_tracks())
+        groups = _artist_groups(self.library.list_play_all_eligible_tracks())
         normalized_seen: set[str] = set()
         keys: list[str] = []
         displays: list[str] = []
@@ -377,7 +379,7 @@ class PlayAllPolicyService:
 
         return _resolve_artist_from_groups(
             artist_query,
-            _artist_groups(self.library.list_indexed_mp3_tracks()),
+            _artist_groups(self.library.list_play_all_eligible_tracks()),
         )
 
     def resolve_available_track(self, track_query: str) -> _TrackResolution:
@@ -396,9 +398,7 @@ class PlayAllPolicyService:
                 message="Track searches must not be filesystem paths.",
             )
         candidates = [
-            track
-            for _, track in self.policy.list_exception_tracks(guild_id)
-            if track is not None
+            track for _, track in self.policy.list_exception_tracks(guild_id) if track is not None
         ]
         return _resolve_track_from_matches(track_query, candidates)
 
@@ -511,9 +511,7 @@ def _resolve_artist_from_groups(
         return exact[0]
     if len(exact) > 1:
         return _ambiguous_artist(exact)
-    partial = [
-        group for group in groups.values() if normalized_query in group.normalized_artist
-    ]
+    partial = [group for group in groups.values() if normalized_query in group.normalized_artist]
     if len(partial) == 1:
         return partial[0]
     if len(partial) > 1:
@@ -525,11 +523,7 @@ def _resolve_track_from_matches(query: str, matches: list[Track]) -> _TrackResol
     normalized_query = normalize_search_text(query)
     if not normalized_query:
         return _TrackResolution(ok=False, message="Provide a track search.")
-    exact = [
-        track
-        for track in matches
-        if normalized_query in _exact_track_keys(track)
-    ]
+    exact = [track for track in matches if normalized_query in _exact_track_keys(track)]
     if len(exact) == 1:
         return _TrackResolution(ok=True, track=exact[0])
     if len(exact) > 1:
@@ -545,8 +539,21 @@ def _exact_track_keys(track: Track) -> set[str]:
     return {
         normalize_search_text(track.display_title),
         normalize_search_text(track.title),
-        normalize_search_text(track.file_name.removesuffix(".mp3") if track.file_name else None),
+        normalize_search_text(_filename_stem(track.file_name)),
     }
+
+
+def _is_play_all_extension(track: Track) -> bool:
+    return (track.extension or "").casefold() in PLAY_ALL_AUDIO_EXTENSIONS
+
+
+def _filename_stem(file_name: str | None) -> str | None:
+    if not file_name:
+        return None
+    suffix = file_name.rsplit(".", maxsplit=1)
+    if len(suffix) == 2:
+        return suffix[0]
+    return file_name
 
 
 def _ambiguous_artist(matches: list[_ArtistResolution]) -> _ArtistResolution:
@@ -577,10 +584,7 @@ def _exception_status_text(*, excluded: bool, strict: bool, available: bool) -> 
 
 def _track_label(track: Track) -> str:
     title = (
-        _clean(track.display_title)
-        or _clean(track.title)
-        or _clean(track.file_name)
-        or "Untitled"
+        _clean(track.display_title) or _clean(track.title) or _clean(track.file_name) or "Untitled"
     )
     return f"{display_artist_for_track(track)} — {title}"
 

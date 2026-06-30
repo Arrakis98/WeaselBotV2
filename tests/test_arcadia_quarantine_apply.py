@@ -31,7 +31,7 @@ def test_manifest_apply_uses_mediatool_bucket_and_is_idempotent(tmp_path: Path) 
     )
     UserRepository(database).upsert(UserRecord(user_id=42, display_name="Admin"))
 
-    relative_path = "Artist/interview.mp3"
+    relative_path = "Artist/interview.opus"
     source = music / relative_path
     source.parent.mkdir(parents=True)
     source.write_bytes(b"interview")
@@ -40,9 +40,9 @@ def test_manifest_apply_uses_mediatool_bucket_and_is_idempotent(tmp_path: Path) 
             source="local",
             source_id=relative_path,
             relative_path=relative_path,
-            file_name="interview.mp3",
+            file_name="interview.opus",
             display_title="interview",
-            extension=".mp3",
+            extension=".opus",
         )
     )
     manifest_path, validation_path = _write_reports(

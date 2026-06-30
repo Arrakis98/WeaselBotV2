@@ -133,9 +133,10 @@ playback, autoplay radio, playlist workflows, and same-artist actions remain
 planned for later phases.
 
 `/play_all` feeds the in-memory queue from already indexed local library rows. It
-filters to tracks whose indexed extension is `.mp3`, shuffles them, starts the
-first track when idle, and appends the remaining tracks to the upcoming queue.
-Non-MP3 indexed files are intentionally ignored by `/play_all` for now.
+filters to Play All eligible local audio extensions, currently `.mp3` and
+`.opus`, shuffles them, starts the first track when idle, and appends the
+remaining tracks to the upcoming queue. Other indexed audio extensions are
+intentionally ignored by `/play_all` for now.
 
 `/play_all` can receive invocation-only artist exclusions through the
 `exclusions` slash option. `PlayAllPolicyService` parses comma-separated artist
@@ -144,8 +145,8 @@ currently indexed available artists, and filters the eligible pool in one
 application-layer pass. The `use_exceptions` slash option is also invocation-only:
 when true, valid stored per-guild track exceptions can re-allow tracks by the
 excluded artists; when false, exceptions are ignored for that run. Unavailable,
-quarantined, missing, invalid, and non-MP3 tracks remain ineligible regardless
-of exception records.
+quarantined, missing, invalid, and tracks outside the Play All eligible extension
+set remain ineligible regardless of exception records.
 
 The filtering affects only the newly generated `/play_all` selection. It does
 not change `/play_local`, `/search_local`, direct track playback, manual queue

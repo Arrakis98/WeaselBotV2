@@ -8,7 +8,8 @@ from pathlib import Path, PurePosixPath
 from weasel_bot_v2.models import Track
 from weasel_bot_v2.repositories import TrackRepository
 
-AUDIO_EXTENSIONS = frozenset({".mp3", ".flac", ".wav", ".ogg", ".m4a"})
+AUDIO_EXTENSIONS = frozenset({".mp3", ".flac", ".wav", ".ogg", ".m4a", ".opus"})
+PLAY_ALL_AUDIO_EXTENSIONS = frozenset({".mp3", ".opus"})
 
 
 @dataclass(frozen=True)
@@ -105,8 +106,8 @@ class LocalLibraryService:
     def stats(self) -> int:
         return self.tracks.count_local()
 
-    def list_indexed_mp3_tracks(self) -> list[Track]:
-        return select_mp3_tracks(self.tracks.list_local(available_only=True))
+    def list_play_all_eligible_tracks(self) -> list[Track]:
+        return select_play_all_eligible_tracks(self.tracks.list_local(available_only=True))
 
     def playback_path(self, track: Track) -> Path:
         if not track.relative_path:
@@ -139,8 +140,10 @@ def normalize_search_text(value: str | None) -> str:
     return " ".join(without_accents.casefold().split())
 
 
-def select_mp3_tracks(tracks: list[Track]) -> list[Track]:
-    return [track for track in tracks if (track.extension or "").casefold() == ".mp3"]
+def select_play_all_eligible_tracks(tracks: list[Track]) -> list[Track]:
+    return [
+        track for track in tracks if (track.extension or "").casefold() in PLAY_ALL_AUDIO_EXTENSIONS
+    ]
 
 
 def _to_stored_relative_path(relative: Path) -> str | None:
