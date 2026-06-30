@@ -40,6 +40,7 @@ class GuildPlayerState:
         self.clear_current_track()
         self.upcoming.clear()
         self.recently_played.clear()
+        self.suppress_next_track_end = False
 
     def mark_manual_stop(self) -> None:
         self.suppress_next_track_end = True
