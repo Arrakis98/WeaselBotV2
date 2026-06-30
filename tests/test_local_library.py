@@ -11,7 +11,7 @@ from weasel_bot_v2.repositories import TrackRepository
 from weasel_bot_v2.services.local_library import (
     LocalLibraryService,
     safe_relative_path,
-    select_mp3_tracks,
+    select_play_all_eligible_tracks,
 )
 
 
@@ -64,13 +64,31 @@ def test_scan_supports_common_audio_extensions(
     library: tuple[Path, LocalLibraryService, TrackRepository],
 ) -> None:
     music_root, service, tracks = library
-    for extension in (".mp3", ".flac", ".wav", ".ogg", ".m4a"):
+    for extension in (".mp3", ".flac", ".wav", ".ogg", ".m4a", ".opus"):
         _write_audio(music_root / f"track{extension}")
 
     result = service.scan()
 
-    assert result.found == 5
-    assert tracks.count_local() == 5
+    assert result.found == 6
+    assert tracks.count_local() == 6
+    opus = tracks.get_local_by_relative_path("track.opus")
+    assert opus is not None
+    assert opus.extension == ".opus"
+
+
+def test_scan_ignores_unsupported_extensions(
+    library: tuple[Path, LocalLibraryService, TrackRepository],
+) -> None:
+    music_root, service, tracks = library
+    _write_audio(music_root / "track.opus")
+    _write_audio(music_root / "cover.jpg")
+    _write_audio(music_root / "notes.txt")
+
+    result = service.scan()
+
+    assert result.found == 1
+    assert tracks.count_local() == 1
+    assert tracks.get_local_by_relative_path("track.opus") is not None
 
 
 def test_scan_skips_symlink_that_escapes_music_root(
@@ -104,6 +122,19 @@ def test_search_matches_filename_artist_category_and_accents(
     assert service.search("anime")[0].relative_path == "Anime/Composer/Opening.mp3"
 
 
+def test_search_finds_opus_after_scan(
+    library: tuple[Path, LocalLibraryService, TrackRepository],
+) -> None:
+    music_root, service, _ = library
+    _write_audio(music_root / "France" / "Renaud" / "Mistral gagnant.opus")
+    service.scan()
+
+    match = service.search("mistral")[0]
+
+    assert match.relative_path == "France/Renaud/Mistral gagnant.opus"
+    assert match.extension == ".opus"
+
+
 def test_scan_upserts_existing_local_track(
     library: tuple[Path, LocalLibraryService, TrackRepository],
 ) -> None:
@@ -124,31 +155,38 @@ def test_scan_upserts_existing_local_track(
     assert tracks.count_local() == 1
 
 
-def test_list_indexed_mp3_tracks_ignores_non_mp3_extensions(
+def test_list_play_all_eligible_tracks_includes_mp3_and_opus_only(
     library: tuple[Path, LocalLibraryService, TrackRepository],
 ) -> None:
     music_root, service, _ = library
     _write_audio(music_root / "one.mp3")
     _write_audio(music_root / "two.flac")
     _write_audio(music_root / "three.MP3")
+    _write_audio(music_root / "four.opus")
     service.scan()
 
-    mp3_tracks = service.list_indexed_mp3_tracks()
+    play_all_tracks = service.list_play_all_eligible_tracks()
 
-    assert [track.relative_path for track in mp3_tracks] == ["one.mp3", "three.MP3"]
+    assert [track.relative_path for track in play_all_tracks] == [
+        "four.opus",
+        "one.mp3",
+        "three.MP3",
+    ]
 
 
-def test_select_mp3_tracks_filters_by_extension_only() -> None:
+def test_select_play_all_eligible_tracks_filters_by_extension_only() -> None:
     tracks = [
         _track("one.mp3", ".mp3"),
         _track("two.flac", ".flac"),
         _track("three.MP3", ".MP3"),
+        _track("four.opus", ".opus"),
         _track("missing-extension", None),
     ]
 
-    assert [track.relative_path for track in select_mp3_tracks(tracks)] == [
+    assert [track.relative_path for track in select_play_all_eligible_tracks(tracks)] == [
         "one.mp3",
         "three.MP3",
+        "four.opus",
     ]
 
 

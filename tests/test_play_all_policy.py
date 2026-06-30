@@ -9,10 +9,12 @@ import pytest
 from weasel_bot_v2.cogs.music import MusicCog
 from weasel_bot_v2.config import DatabaseConfig
 from weasel_bot_v2.database import SQLiteDatabase
-from weasel_bot_v2.models import Track, UserRecord
+from weasel_bot_v2.models import Rating, Track, UserRecord
 from weasel_bot_v2.repositories import (
     PlayAllPolicyRepository,
+    RatingRepository,
     TrackRepository,
+    TrackVolumeOverrideRepository,
     UserRepository,
 )
 from weasel_bot_v2.services.local_library import LocalLibraryService
@@ -100,6 +102,52 @@ def test_play_all_filter_supports_multiple_exclusions_and_exceptions(
     assert _ids(eligible) == _ids([gims_keep, b_keep, other])
     assert gims_drop.id not in _ids(eligible)
     assert b_drop.id not in _ids(eligible)
+
+
+def test_play_all_eligible_pool_includes_opus_and_keeps_mp3_behavior(
+    database: SQLiteDatabase,
+) -> None:
+    service = _policy_service(database)
+    mp3 = _track(database, "Pop/Artist/One.mp3", artist="Artist")
+    opus = _track(database, "Pop/Artist/Two.opus", artist="Artist", extension=".opus")
+    _track(database, "Pop/Artist/Three.flac", artist="Artist", extension=".flac")
+
+    eligible = service.eligible_tracks_for_play_all(123)
+
+    assert _ids(eligible) == _ids([mp3, opus])
+
+
+def test_play_all_filter_exclusions_and_exceptions_work_with_opus(
+    database: SQLiteDatabase,
+) -> None:
+    service = _policy_service(database)
+    keep = _track(database, "Pop/GIMS/Keep.opus", artist="GIMS", extension=".opus")
+    drop = _track(database, "Pop/GIMS/Drop.opus", artist="GIMS", extension=".opus")
+    other = _track(database, "Pop/Other/Free.opus", artist="Other", extension=".opus")
+    _exclude(service, "GIMS")
+    _exception(service, "Keep")
+
+    eligible = service.eligible_tracks_for_play_all(123)
+
+    assert _ids(eligible) == _ids([keep, other])
+    assert drop.id not in _ids(eligible)
+
+
+def test_ratings_and_volume_overrides_can_be_stored_for_opus_tracks(
+    database: SQLiteDatabase,
+) -> None:
+    track = _track(database, "Pop/Artist/Track.opus", artist="Artist", extension=".opus")
+    assert track.id is not None
+
+    RatingRepository(database).set_rating(
+        Rating(guild_id=123, user_id=42, track_id=track.id, rating="superlike")
+    )
+    TrackVolumeOverrideRepository(database).save(123, track.id, 135)
+
+    saved_rating = RatingRepository(database).get_rating(123, 42, track.id)
+    saved_volume = TrackVolumeOverrideRepository(database).get(123, track.id)
+    assert saved_rating is not None and saved_rating.rating == "superlike"
+    assert saved_volume is not None and saved_volume.volume == 135
 
 
 def test_invocation_exclusions_parse_multiple_artists_and_deduplicate(
@@ -342,6 +390,7 @@ def test_play_all_command_surface_is_simplified() -> None:
         "exclusions",
         "use_exceptions",
     }
+    assert "MP3" not in play_all.description
 
 
 async def _run_slash(
@@ -365,7 +414,13 @@ def _policy_service(database: SQLiteDatabase) -> PlayAllPolicyService:
     )
 
 
-def _track(database: SQLiteDatabase, relative_path: str, *, artist: str) -> Track:
+def _track(
+    database: SQLiteDatabase,
+    relative_path: str,
+    *,
+    artist: str,
+    extension: str | None = None,
+) -> Track:
     UserRepository(database).upsert(UserRecord(user_id=42, display_name="Admin"))
     return TrackRepository(database).upsert_local(
         Track(
@@ -378,7 +433,7 @@ def _track(database: SQLiteDatabase, relative_path: str, *, artist: str) -> Trac
             artist=artist,
             artist_guess=artist,
             category_guess="Pop",
-            extension=".mp3",
+            extension=extension or Path(relative_path).suffix.lower(),
         )
     )
 

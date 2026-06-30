@@ -535,10 +535,7 @@ def test_components_v2_rating_summary_uses_application_emojis_when_available() -
     summary = format_components_v2_rating_totals(bot, counts)
 
     assert summary == (
-        "<:wg_like:201> 1   "
-        "<:wg_superlike:202> 2   "
-        "<:wg_dislike:203> 3   "
-        "<:wg_superdislike:204> 4"
+        "<:wg_like:201> 1   <:wg_superlike:202> 2   <:wg_dislike:203> 3   <:wg_superdislike:204> 4"
     )
 
 
@@ -901,16 +898,18 @@ def test_renderer_type_detection() -> None:
 
 
 def _indexed_track(database: SQLiteDatabase, relative_path: str) -> Track:
+    file_name = Path(relative_path).name
     return TrackRepository(database).upsert(
         Track(
             source="local",
             source_id=relative_path,
             relative_path=relative_path,
-            file_name=relative_path.rsplit("/", maxsplit=1)[-1],
-            display_title=relative_path.rsplit("/", maxsplit=1)[-1].removesuffix(".mp3"),
-            title=relative_path.rsplit("/", maxsplit=1)[-1].removesuffix(".mp3"),
+            file_name=file_name,
+            display_title=Path(file_name).stem,
+            title=Path(file_name).stem,
             artist_guess="Artist" if "/" in relative_path else None,
             category_guess="Rock" if relative_path.count("/") >= 2 else None,
+            extension=Path(file_name).suffix.lower(),
         )
     )
 

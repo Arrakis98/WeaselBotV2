@@ -257,8 +257,8 @@ store stable indexed track IDs. The `use_exceptions` slash option is
 invocation-only: when true, valid stored exceptions can re-allow tracks by the
 artists named in the current `exclusions` option; when false, all tracks by
 those artists remain excluded for that run. Unavailable, quarantined, missing,
-invalid, and non-MP3 tracks remain ineligible even when an exception record
-exists.
+invalid, and tracks outside the Play All eligible extension set remain
+ineligible even when an exception record exists.
 
 Exception management is exposed through the main control grid current-track
 button, the personal More Actions current-track toggle, and
@@ -299,3 +299,20 @@ creation time, ratings, volume overrides, playlist items, play history,
 quarantine history, and play-all exceptions. Only identity paths,
 path-derived/index metadata, file stat metadata, indexing time, and availability
 are refreshed. Audio files are validation-only inputs and are never modified.
+
+## ADR-0018: Opus as a first-class local audio format
+
+- Status: Accepted
+- Date: 2026-06-30
+
+Arcadia Music Tools may publish downloaded tracks as `.opus` files in the shared
+active music library. Weasel Bot V2 treats `.opus` as a normal indexed local
+audio format with the same track-identity, playback, queue, rating, volume,
+Play All exception, and quarantine behavior as existing local tracks.
+
+The local scanner keeps a broad indexable audio extension set, now including
+`.opus`. `/play_all` intentionally uses a separate eligible extension set so
+new indexed formats are not automatically included without a tested decision.
+The current Play All eligible extensions are `.mp3` and `.opus`; other indexed
+extensions remain searchable and playable through direct local playback but are
+not part of the Play All pool.

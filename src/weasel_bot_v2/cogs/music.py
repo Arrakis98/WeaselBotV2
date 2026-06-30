@@ -149,7 +149,7 @@ class MusicCog(commands.Cog):
 
     @app_commands.command(
         name="play_all",
-        description="Shuffle all indexed local MP3 tracks into the playback queue.",
+        description="Shuffle all Play All eligible local audio tracks into the playback queue.",
     )
     @app_commands.describe(
         exclusions="Comma-separated artists to exclude for this run only.",
@@ -163,10 +163,10 @@ class MusicCog(commands.Cog):
     ) -> None:
         await interaction.response.defer(thinking=True)
         library = self._library_service()
-        indexed_tracks = library.list_indexed_mp3_tracks()
+        indexed_tracks = library.list_play_all_eligible_tracks()
         if not indexed_tracks:
             await interaction.followup.send(
-                "No indexed local MP3 tracks found. Run /library_scan first.",
+                "No Play All eligible local tracks found. Run /library_scan first.",
                 ephemeral=True,
             )
             return
@@ -196,11 +196,11 @@ class MusicCog(commands.Cog):
             if exclusion_resolution.excluded_artist_keys:
                 artists = ", ".join(exclusion_resolution.display_artists)
                 message = (
-                    "No eligible local MP3 tracks remain. "
+                    "No Play All eligible local tracks remain. "
                     f"The requested artist exclusions removed every Play All track: {artists}."
                 )
             else:
-                message = "No eligible local MP3 tracks are available for /play_all."
+                message = "No Play All eligible local tracks are available for /play_all."
             await interaction.followup.send(
                 message,
                 ephemeral=True,
@@ -209,7 +209,7 @@ class MusicCog(commands.Cog):
 
         random.shuffle(tracks)
         playback = self._playback_service()
-        found_count = policy_pool.total_indexed_mp3
+        found_count = policy_pool.total_indexed_play_all
         panel = NowPlayingPanelService(self.bot)
         async with panel.lock_for(guild.id):
             state = self.bot.player_states.get_or_create(guild.id)
@@ -222,7 +222,7 @@ class MusicCog(commands.Cog):
                 )
                 message = (
                     "Added to queue\n"
-                    f"{queued_count} track(s) from {found_count} indexed MP3 tracks\n"
+                    f"{queued_count} track(s) from {found_count} Play All eligible tracks\n"
                     f"Starting position: {start_position}\n"
                     f"Queue length: {state.queue_length}"
                 )
@@ -251,7 +251,8 @@ class MusicCog(commands.Cog):
             (
                 "Playback started\n"
                 f"{track_title(first)}\n"
-                f"Queued {len(remaining)} more track(s) from {found_count} indexed MP3 tracks\n"
+                f"Queued {len(remaining)} more track(s) from {found_count} "
+                "Play All eligible tracks\n"
                 f"Queue length: {state.queue_length}"
             ),
             ephemeral=False,
@@ -630,10 +631,14 @@ class MusicCog(commands.Cog):
             excluded: set[int] = set()
             state = self.bot.player_states.get(guild.id)
             current = state.current_track if state is not None else None
-            if current is not None and current.id is not None and _track_has_superdislike(
-                self.bot.database,
-                guild.id,
-                current.id,
+            if (
+                current is not None
+                and current.id is not None
+                and _track_has_superdislike(
+                    self.bot.database,
+                    guild.id,
+                    current.id,
+                )
             ):
                 skip_result = await self._playback_service().skip(guild)
                 if not skip_result.ok:

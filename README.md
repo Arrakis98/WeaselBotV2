@@ -21,7 +21,7 @@ This repository is designed to be public-repository safe. It must not contain Di
 
 Phase 5.0 provides the Docker/Lavalink stack, core SQLite architecture, local
 library indexing, local search, local `/play_local` playback, `/play_all` for
-shuffled indexed MP3 queues, basic player controls, a Discord Now Playing
+shuffled Play All eligible local queues, basic player controls, a Discord Now Playing
 control panel, an in-memory per-guild local playback queue, and persisted user
 ratings for local tracks. Phase 5.1 adds persistent per-guild volume defaults,
 and Phase 5.4 adds per-guild, per-track volume presets so quiet tracks can be
@@ -213,9 +213,10 @@ currently indexed available artists, and fails without queue mutation when an
 artist is unknown or ambiguous. Stored exceptions remain persistent per guild
 and can be managed with the current-track More Actions toggle or
 the main control grid's current-track exception button, or
-`/playall_exception track:<search> enabled:true|false`. Quarantined,
-unavailable, missing, invalid, and non-MP3 tracks remain ineligible regardless
-of exception records. `/play_local`, `/search_local`, current playback, existing
+`/playall_exception track:<search> enabled:true|false`. Play All currently
+accepts indexed `.mp3` and `.opus` tracks. Quarantined, unavailable, missing,
+invalid, and other indexed extensions remain ineligible regardless of exception
+records. `/play_local`, `/search_local`, current playback, existing
 queue contents, ratings, quarantine administration, restoration, and future
 playlists are unchanged.
 

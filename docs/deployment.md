@@ -142,8 +142,8 @@ disconnect from voice. `/clear_queue` only clears upcoming tracks and leaves the
 current track playing.
 
 `/play_all` uses the SQLite index created by `/library_scan`; it does not scan the
-filesystem at command time. It currently queues indexed `.mp3` files only and
-intentionally ignores other indexed extensions.
+filesystem at command time. It currently queues indexed `.mp3` and `.opus` files
+and intentionally ignores other indexed extensions.
 
 SuperDislike quarantine is reversible and disabled for automatic rating actions
 by default. Preview the administrative purge with

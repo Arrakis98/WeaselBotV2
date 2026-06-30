@@ -761,17 +761,18 @@ def _store_exception(database: SQLiteDatabase, *, track_id: int) -> None:
 
 
 def _indexed_track(database: SQLiteDatabase, relative_path: str) -> Track:
+    file_name = Path(relative_path).name
     return TrackRepository(database).upsert(
         Track(
             source="local",
             source_id=relative_path,
             relative_path=relative_path,
-            file_name=relative_path.rsplit("/", maxsplit=1)[-1],
-            display_title=relative_path.rsplit("/", maxsplit=1)[-1].removesuffix(".mp3"),
-            title=relative_path.rsplit("/", maxsplit=1)[-1].removesuffix(".mp3"),
+            file_name=file_name,
+            display_title=Path(file_name).stem,
+            title=Path(file_name).stem,
             artist_guess="Artist",
             category_guess="Rock" if relative_path.count("/") >= 2 else None,
-            extension=".mp3",
+            extension=Path(file_name).suffix.lower(),
         )
     )
 
@@ -819,7 +820,7 @@ class _FakeLibrary:
     def search(self, query: str, *, limit: int) -> list[Track]:
         return self.tracks[:limit]
 
-    def list_indexed_mp3_tracks(self) -> list[Track]:
+    def list_play_all_eligible_tracks(self) -> list[Track]:
         return list(self.tracks)
 
 
