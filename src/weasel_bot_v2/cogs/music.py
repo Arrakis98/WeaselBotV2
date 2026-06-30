@@ -22,6 +22,7 @@ from weasel_bot_v2.services.audio import AudioPlaybackService
 from weasel_bot_v2.services.control_center import ControlCenterService, OpenControlPanelView
 from weasel_bot_v2.services.local_library import LocalLibraryService
 from weasel_bot_v2.services.now_playing_panel import (
+    NowPlayingPanelRecord,
     NowPlayingPanelService,
     format_queue,
     resolve_rating_text_emoji,
@@ -129,7 +130,8 @@ class MusicCog(commands.Cog):
             was_active = state.has_track
             result = await playback.play_local_track(interaction=interaction, track=matches[0])
             if result.ok:
-                await panel.refresh_locked(
+                await ensure_public_now_playing_panel(
+                    panel=panel,
                     guild=guild,
                     channel=cast(discord.abc.Messageable | None, interaction.channel),
                     reason="play_local",
@@ -215,7 +217,8 @@ class MusicCog(commands.Cog):
             state = self.bot.player_states.get_or_create(guild.id)
             if prepare_play_all_session(state, guild):
                 start_position, queued_count = state.enqueue_many(tracks)
-                await panel.refresh_locked(
+                await ensure_public_now_playing_panel(
+                    panel=panel,
                     guild=guild,
                     channel=cast(discord.abc.Messageable | None, interaction.channel),
                     reason="play_all:enqueue",
@@ -241,7 +244,8 @@ class MusicCog(commands.Cog):
                 return
 
             state.enqueue_many(remaining)
-            await panel.refresh_locked(
+            await ensure_public_now_playing_panel(
+                panel=panel,
                 guild=guild,
                 channel=cast(discord.abc.Messageable | None, interaction.channel),
                 reason="play_all:start",
@@ -1010,6 +1014,16 @@ def _track_has_superdislike(database: object, guild_id: int, track_id: int) -> b
         guild_id,
         "superdislike",
     )
+
+
+async def ensure_public_now_playing_panel(
+    *,
+    panel: NowPlayingPanelService,
+    guild: discord.Guild,
+    channel: discord.abc.Messageable | None,
+    reason: str,
+) -> NowPlayingPanelRecord | None:
+    return await panel.refresh_locked(guild=guild, channel=channel, reason=reason)
 
 
 def prepare_play_all_session(state: GuildPlayerState, guild: object) -> bool:

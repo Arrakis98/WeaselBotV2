@@ -353,7 +353,7 @@ async def test_hard_stop_clears_session_and_disconnects(database: SQLiteDatabase
     assert state.recently_played == []
     assert state.paused is False
     assert state.loop_current is False
-    assert state.suppress_next_track_end is True
+    assert state.suppress_next_track_end is False
 
 
 @pytest.mark.asyncio
@@ -397,6 +397,34 @@ async def test_manual_stop_suppresses_next_track_end(database: SQLiteDatabase) -
 
 
 @pytest.mark.asyncio
+async def test_new_session_after_hard_stop_does_not_suppress_natural_advance(
+    database: SQLiteDatabase,
+) -> None:
+    bot = _FakeBot(database)
+    bot.lavalink_available = True
+    guild = _FakeGuild(guild_id=123)
+    player = _FakePlayer()
+    player.guild = guild
+    guild.voice_client = player
+    service = _FakeAudioPlaybackService(bot, Path("/music"))
+    state = bot.player_states.get_or_create(123)
+    state.current_track = Track(source="local", source_id="stopped.mp3")
+
+    result = await service.hard_stop(cast(Any, guild))
+    state.current_track = Track(source="local", source_id="current.mp3")
+    state.upcoming.append(
+        Track(source="local", source_id="next.mp3", relative_path="next.mp3", file_name="next.mp3")
+    )
+    await service.handle_track_end(SimpleNamespace(reason="finished", player=player))
+
+    assert result.ok is True
+    assert state.suppress_next_track_end is False
+    assert player.played == [{"identifier": "/music/next.mp3"}]
+    assert state.current_track is not None
+    assert state.current_track.source_id == "next.mp3"
+
+
+@pytest.mark.asyncio
 async def test_natural_track_completion_still_auto_advances(
     database: SQLiteDatabase,
     monkeypatch: pytest.MonkeyPatch,
@@ -422,16 +450,75 @@ async def test_natural_track_completion_still_auto_advances(
     assert state.current_track.source_id == "next.mp3"
 
 
+@pytest.mark.asyncio
+async def test_manual_skip_still_advances_to_next_track(database: SQLiteDatabase) -> None:
+    bot = _FakeBot(database)
+    bot.lavalink_available = True
+    guild = _FakeGuild(guild_id=123)
+    player = _FakePlayer()
+    player.guild = guild
+    guild.voice_client = player
+    service = _FakeAudioPlaybackService(bot, Path("/music"))
+    state = bot.player_states.get_or_create(123)
+    current = Track(source="local", source_id="current.mp3")
+    state.current_track = current
+    state.upcoming.append(
+        Track(source="local", source_id="next.mp3", relative_path="next.mp3", file_name="next.mp3")
+    )
+
+    result = await service.skip(cast(Any, guild))
+
+    assert result.ok is True
+    assert player.played == [{"identifier": "/music/next.mp3"}]
+    assert state.current_track is not None
+    assert state.current_track.source_id == "next.mp3"
+    assert state.recently_played == [current]
+
+
+@pytest.mark.asyncio
+async def test_loop_current_track_replays_without_consuming_queue(
+    database: SQLiteDatabase,
+) -> None:
+    bot = _FakeBot(database)
+    bot.lavalink_available = True
+    guild = _FakeGuild(guild_id=123)
+    player = _FakePlayer()
+    player.guild = guild
+    guild.voice_client = player
+    service = _FakeAudioPlaybackService(bot, Path("/music"))
+    state = bot.player_states.get_or_create(123)
+    current = Track(
+        source="local",
+        source_id="current.mp3",
+        relative_path="current.mp3",
+        file_name="current.mp3",
+    )
+    next_track = Track(source="local", source_id="next.mp3", relative_path="next.mp3")
+    state.current_track = current
+    state.upcoming.append(next_track)
+    state.loop_current = True
+
+    await service.handle_track_end(SimpleNamespace(reason="finished", player=player))
+
+    assert player.played == [{"identifier": "/music/current.mp3"}]
+    assert state.current_track is not None
+    assert state.current_track.source_id == "current.mp3"
+    assert state.upcoming == [next_track]
+    assert state.loop_current is True
+
+
 def test_clear_queue_preserves_current_playback(database: SQLiteDatabase) -> None:
     bot = _FakeBot(database)
     service = AudioPlaybackService(bot, Path("/music"))
     state = bot.player_states.get_or_create(123)
     current = Track(source="local", source_id="current.mp3")
     state.current_track = current
-    state.upcoming.extend([
-        Track(source="local", source_id="next.mp3"),
-        Track(source="local", source_id="third.mp3"),
-    ])
+    state.upcoming.extend(
+        [
+            Track(source="local", source_id="next.mp3"),
+            Track(source="local", source_id="third.mp3"),
+        ]
+    )
 
     result = service.clear_queue(123)
 

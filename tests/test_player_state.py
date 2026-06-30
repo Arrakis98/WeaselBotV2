@@ -148,10 +148,12 @@ def test_start_or_enqueue_many_active_queues_all_without_replacing_current() -> 
 def test_enqueue_many_returns_start_position_and_count() -> None:
     state = GuildPlayerState(guild_id=123, upcoming=[_track("existing.mp3")])
 
-    start_position, queued_count = state.enqueue_many([
-        _track("first.mp3"),
-        _track("second.mp3"),
-    ])
+    start_position, queued_count = state.enqueue_many(
+        [
+            _track("first.mp3"),
+            _track("second.mp3"),
+        ]
+    )
 
     assert start_position == 2
     assert queued_count == 2
@@ -217,6 +219,7 @@ def test_play_all_idle_state_clears_stale_queue_before_starting_fresh() -> None:
         recently_played=[_track("previous.mp3")],
         paused=True,
         loop_current=True,
+        suppress_next_track_end=True,
     )
     guild = SimpleNamespace(voice_client=None)
 
@@ -228,6 +231,7 @@ def test_play_all_idle_state_clears_stale_queue_before_starting_fresh() -> None:
     assert state.recently_played == []
     assert state.paused is False
     assert state.loop_current is False
+    assert state.suppress_next_track_end is False
 
 
 def test_play_all_disconnected_state_clears_stale_current_track() -> None:

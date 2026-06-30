@@ -28,7 +28,11 @@ from weasel_bot_v2.services.control_center import (
     OpenControlPanelView,
     control_center_custom_ids,
 )
-from weasel_bot_v2.services.now_playing_panel import NowPlayingPanelRecord, NowPlayingPanelRegistry
+from weasel_bot_v2.services.now_playing_panel import (
+    NowPlayingPanelRecord,
+    NowPlayingPanelRegistry,
+    PanelRenderMode,
+)
 from weasel_bot_v2.services.player_state import PlayerStateStore
 
 
@@ -418,6 +422,8 @@ async def test_successful_play_local_acknowledgement_includes_control_panel_open
     await _run_slash(cog, "play_local", interaction, "current")
 
     assert interaction.deferred_public is True
+    assert len(interaction.channel.sent_messages) == 1
+    assert bot.now_playing_panels.get(123) is not None
     assert interaction.followup_ephemeral == [False]
     assert interaction.followup_messages == ["Playback started\ncurrent\nArtist • Rock"]
     assert isinstance(interaction.followup_views[0], OpenControlPanelView)
@@ -440,11 +446,83 @@ async def test_successful_play_all_acknowledgement_includes_control_panel_opener
 
     await _run_slash(cog, "play_all", interaction)
 
+    assert len(interaction.channel.sent_messages) == 1
+    assert bot.now_playing_panels.get(123) is not None
     assert interaction.followup_ephemeral == [False]
     assert "Playback started" in interaction.followup_messages[0]
     assert "Queued 1 more track(s)" in interaction.followup_messages[0]
     assert isinstance(interaction.followup_views[0], OpenControlPanelView)
     assert _button_labels(interaction.followup_views[0]) == ["Open Control Panel"]
+
+
+@pytest.mark.asyncio
+async def test_play_all_refreshes_existing_public_panel_without_duplicate(
+    database: SQLiteDatabase,
+) -> None:
+    bot = _FakeBot(database)
+    cog = MusicCog(cast(Any, bot))
+    current = _indexed_track(database, "Rock/Artist/current.mp3")
+    tracks = [
+        _indexed_track(database, "Rock/Artist/first.mp3"),
+        _indexed_track(database, "Rock/Artist/second.mp3"),
+    ]
+    _patch_cog_services(cog, library=_FakeLibrary(tracks), playback=_FakePlayback(bot))
+    guild = _FakeGuild(guild_id=123, voice_client=object())
+    interaction = _FakeInteraction(guild=guild)
+    bot.channels[interaction.channel.id] = interaction.channel
+    bot.player_states.get_or_create(123).current_track = current
+    existing = await interaction.channel.send(view=discord.ui.View())
+    bot.now_playing_panels.set(
+        NowPlayingPanelRecord(
+            guild_id=123,
+            channel_id=interaction.channel.id,
+            message_id=existing.id,
+            render_mode=PanelRenderMode.LEGACY_EMBED,
+        )
+    )
+
+    await _run_slash(cog, "play_all", interaction)
+
+    record = bot.now_playing_panels.get(123)
+    assert len(interaction.channel.sent_messages) == 1
+    assert existing.edit_count == 1
+    assert record is not None
+    assert record.message_id == existing.id
+    assert interaction.followup_ephemeral == [False]
+    assert isinstance(interaction.followup_views[0], OpenControlPanelView)
+
+
+@pytest.mark.asyncio
+async def test_play_all_recreates_missing_public_panel_in_command_channel(
+    database: SQLiteDatabase,
+) -> None:
+    bot = _FakeBot(database)
+    cog = MusicCog(cast(Any, bot))
+    tracks = [
+        _indexed_track(database, "Rock/Artist/first.mp3"),
+        _indexed_track(database, "Rock/Artist/second.mp3"),
+    ]
+    _patch_cog_services(cog, library=_FakeLibrary(tracks), playback=_FakePlayback(bot))
+    guild = _FakeGuild(guild_id=123, voice_client=object())
+    interaction = _FakeInteraction(guild=guild)
+    bot.channels[interaction.channel.id] = interaction.channel
+    bot.now_playing_panels.set(
+        NowPlayingPanelRecord(
+            guild_id=123,
+            channel_id=interaction.channel.id,
+            message_id=999,
+        )
+    )
+
+    await _run_slash(cog, "play_all", interaction)
+
+    record = bot.now_playing_panels.get(123)
+    assert record is not None
+    assert record.message_id != 999
+    assert record.channel_id == interaction.channel.id
+    assert len(interaction.channel.sent_messages) == 1
+    assert interaction.followup_ephemeral == [False]
+    assert isinstance(interaction.followup_views[0], OpenControlPanelView)
 
 
 @pytest.mark.asyncio
@@ -935,7 +1013,8 @@ class _FakeChannel:
         for message in self.sent_messages:
             if message.id == message_id:
                 return message
-        raise discord.NotFound(response=cast(Any, None), message="missing")
+        response = SimpleNamespace(status=404, reason="Not Found")
+        raise discord.NotFound(response=cast(Any, response), message="missing")
 
 
 class _FakeMessage:
