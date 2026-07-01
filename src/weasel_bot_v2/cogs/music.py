@@ -57,7 +57,8 @@ class MusicCog(commands.Cog):
         await interaction.followup.send(
             (
                 "Library scan complete. "
-                f"Found: {result.found}. Updated: {result.upserted}. Skipped: {result.skipped}."
+                f"Found: {result.found}. Updated: {result.upserted}. "
+                f"Marked unavailable: {result.marked_unavailable}. Skipped: {result.skipped}."
             ),
             ephemeral=True,
         )
@@ -70,7 +71,7 @@ class MusicCog(commands.Cog):
         service = self._library_service()
         count = service.stats()
         message = (
-            f"Indexed local tracks: {count}\n"
+            f"Available indexed local tracks: {count}\n"
             f"Configured music root: {self.bot.settings.bot.music_library}"
         )
         await interaction.response.send_message(
@@ -696,6 +697,7 @@ class MusicCog(commands.Cog):
         return LocalLibraryService(
             music_root=self.bot.settings.bot.music_library,
             tracks=TrackRepository(self.bot.database),
+            quarantine=QuarantineRepository(self.bot.database),
         )
 
     def _playback_service(self) -> AudioPlaybackService:

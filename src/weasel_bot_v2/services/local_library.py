@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 
 from weasel_bot_v2.models import Track
-from weasel_bot_v2.repositories import TrackRepository
+from weasel_bot_v2.repositories import QuarantineRepository, TrackRepository
 
 AUDIO_EXTENSIONS = frozenset({".mp3", ".flac", ".wav", ".ogg", ".m4a", ".opus"})
 PLAY_ALL_AUDIO_EXTENSIONS = frozenset({".mp3", ".opus"})
@@ -16,15 +16,22 @@ PLAY_ALL_AUDIO_EXTENSIONS = frozenset({".mp3", ".opus"})
 class LibraryScanResult:
     found: int
     upserted: int
+    marked_unavailable: int
     skipped: int
 
 
 class LocalLibraryService:
     """Indexes and searches local audio files by path relative to the music root."""
 
-    def __init__(self, music_root: Path, tracks: TrackRepository) -> None:
+    def __init__(
+        self,
+        music_root: Path,
+        tracks: TrackRepository,
+        quarantine: QuarantineRepository | None = None,
+    ) -> None:
         self.music_root = music_root
         self.tracks = tracks
+        self.quarantine = quarantine
 
     def scan(self) -> LibraryScanResult:
         found = 0
@@ -33,8 +40,9 @@ class LocalLibraryService:
         root = self.music_root.resolve()
 
         if not root.exists() or not root.is_dir():
-            return LibraryScanResult(found=0, upserted=0, skipped=0)
+            return LibraryScanResult(found=0, upserted=0, marked_unavailable=0, skipped=0)
 
+        found_relative_paths: set[str] = set()
         for path in sorted(root.rglob("*")):
             if not path.is_file() or path.suffix.lower() not in AUDIO_EXTENSIONS:
                 continue
@@ -45,10 +53,22 @@ class LocalLibraryService:
                 continue
 
             found += 1
+            if track.relative_path is None:
+                skipped += 1
+                continue
+            found_relative_paths.add(track.relative_path)
+            if self._has_active_quarantine(track.relative_path):
+                track = replace(track, is_available=False)
             self.tracks.upsert_local(track)
             upserted += 1
 
-        return LibraryScanResult(found=found, upserted=upserted, skipped=skipped)
+        marked_unavailable = self._mark_missing_available_tracks_unavailable(found_relative_paths)
+        return LibraryScanResult(
+            found=found,
+            upserted=upserted,
+            marked_unavailable=marked_unavailable,
+            skipped=skipped,
+        )
 
     def track_from_path(self, path: Path) -> Track | None:
         root = self.music_root.resolve()
@@ -114,6 +134,25 @@ class LocalLibraryService:
             raise ValueError("Track does not have a local relative path.")
         relative = safe_relative_path(track.relative_path)
         return self.music_root / Path(*relative.parts)
+
+    def _mark_missing_available_tracks_unavailable(self, found_relative_paths: set[str]) -> int:
+        marked_unavailable = 0
+        for track in self.tracks.list_local(available_only=True):
+            if track.relative_path in found_relative_paths:
+                continue
+            if track.id is None:
+                continue
+            self.tracks.set_available(track.id, False)
+            marked_unavailable += 1
+        return marked_unavailable
+
+    def _has_active_quarantine(self, relative_path: str) -> bool:
+        if self.quarantine is None:
+            return False
+        existing = self.tracks.get_local_by_relative_path(relative_path)
+        if existing is None or existing.id is None:
+            return False
+        return self.quarantine.active_for_track(existing.id) is not None
 
 
 def infer_path_metadata(relative_path: str) -> tuple[str | None, str | None]:
