@@ -145,6 +145,12 @@ current track playing.
 filesystem at command time. It currently queues indexed `.mp3` and `.opus` files
 and intentionally ignores other indexed extensions.
 
+`/library_scan` also reconciles stale available rows after a successful scan. If
+a previously available indexed local track no longer exists under the configured
+music root, the bot marks that row unavailable without deleting it or changing
+its track ID. The scan completion message includes `Marked unavailable`, and
+`/library_stats` reports available indexed local tracks only.
+
 SuperDislike quarantine is reversible and disabled for automatic rating actions
 by default. Preview the administrative purge with
 `/purge_superdisliked execute:false`. Execution moves eligible indexed local

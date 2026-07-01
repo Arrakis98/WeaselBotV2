@@ -220,6 +220,14 @@ records. `/play_local`, `/search_local`, current playback, existing
 queue contents, ratings, quarantine administration, restoration, and future
 playlists are unchanged.
 
+`/library_scan` reconciles the SQLite local index with the configured music root.
+It upserts supported files currently visible under the mount and marks previously
+available local rows unavailable when their relative path no longer exists on
+disk. It does not delete rows or change track IDs, so ratings, volume presets,
+history, quarantine records, playlists, and Play All exception records remain
+attached. The command reports `Found`, `Updated`, `Marked unavailable`, and
+`Skipped`; `/library_stats` reports available indexed local tracks only.
+
 Lavalink is only reachable on the internal Docker network by default. The example
 compose file mounts the active music library read-only at `/music` for both bot
 and Lavalink. The bot also receives a least-privilege writable admin view at

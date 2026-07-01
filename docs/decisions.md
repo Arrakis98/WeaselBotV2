@@ -316,3 +316,20 @@ new indexed formats are not automatically included without a tested decision.
 The current Play All eligible extensions are `.mp3` and `.opus`; other indexed
 extensions remain searchable and playable through direct local playback but are
 not part of the Play All pool.
+
+## ADR-0019: Library scan reconciles stale local availability
+
+- Status: Accepted
+- Date: 2026-07-01
+
+`/library_scan` is responsible for reconciling available local track rows with
+the configured music root after a successful filesystem scan. The scanner
+collects all supported relative paths it finds, upserts those tracks normally,
+and then marks any previously available local row unavailable when its
+`relative_path` is no longer present on disk.
+
+The scanner must not delete rows or change track IDs during this reconciliation.
+Dependent ratings, volume overrides, play history, quarantine audit records,
+playlists, and Play All exception records remain attached to the existing track
+identity. If a missing track later returns at the same relative path, the normal
+local upsert path marks it available again.

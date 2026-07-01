@@ -95,6 +95,14 @@ to false and receive an audit row in `track_quarantine`. Normal local search and
 the validated original relative path, marks the record restored, and makes the
 track playable again without enqueueing it automatically.
 
+`/library_scan` treats the current filesystem view as authoritative for
+availability of already-indexed local rows. After it upserts supported files
+found under the configured music root, it marks any previously available local
+row unavailable when that row's `relative_path` was not found on disk. It never
+deletes track rows or changes track IDs, so dependent ratings, volume presets,
+history, quarantine records, playlists, and Play All exception records remain
+attached.
+
 ## Application Layers
 
 Phase 2 package boundaries:
