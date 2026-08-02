@@ -62,7 +62,6 @@ LAVALINK_HOST=lavalink
 LAVALINK_PORT=2333
 MUSIC_LIBRARY_HOST_PATH=./music
 QUARANTINE_HOST_PATH=./quarantine
-WEASEL_AUTO_QUARANTINE_SUPERDISLIKE=false
 ```
 
 Do not commit `.env`, `config.yaml`, `compose.yml`, Lavalink local overrides, data
@@ -151,15 +150,14 @@ music root, the bot marks that row unavailable without deleting it or changing
 its track ID. The scan completion message includes `Marked unavailable`, and
 `/library_stats` reports available indexed local tracks only.
 
-SuperDislike quarantine is reversible and disabled for automatic rating actions
-by default. Preview the administrative purge with
+SuperDislike quarantine is reversible. Every successful interactive
+SuperDislike skip moves the captured file directly into the configured
+quarantine root. Preview the separate administrative purge with
 `/purge_superdisliked execute:false`. Execution moves eligible indexed local
 tracks to the configured quarantine destination, marks them unavailable in
 SQLite, removes future queue occurrences, and records an audit row. It never
-deletes music files. Enable automatic SuperDislike quarantine only after a
-successful manual preview and test restore by setting
-`WEASEL_AUTO_QUARANTINE_SUPERDISLIKE=true` or the matching YAML setting in a
-private config.
+deletes music files. Verify the writable moderation mounts and test restoration
+before using SuperDislike against a real library.
 
 ## Troubleshooting
 

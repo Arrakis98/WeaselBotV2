@@ -139,8 +139,10 @@ do not drive recommendations yet. Queue state and ratings remain separate from
 volume settings.
 
 Dislike and SuperDislike save or replace the user's current-track rating before
-invoking the shared skip action exactly once. Like and SuperLike save the rating
-without skipping.
+invoking the shared skip action exactly once. After a successful SuperDislike
+skip, the captured track is always moved out of the playable library and placed
+directly in the quarantine root. Like and SuperLike save the rating without
+skipping.
 
 Volume is per track. A local track can have a guild-specific preset changed with
 `/volume percent:<value>` while that track is playing, or with the Now Playing
@@ -184,9 +186,10 @@ a documented extension point for a later live-tested phase. If Components V2
 rendering fails, the bot falls back to the existing embed-based panel.
 
 The bot owns one writable quarantine root at `/library_admin/quarantine`.
-SuperDislike records are stored below `superdislike/`; approved Arcadia Music
-Tools records are stored below `mediatool/`. SQLite is the shared audit and
-restore journal.
+Interactive SuperDislike moves place the captured file directly in that root;
+collision-safe suffixes prevent silent overwrites. Administrative SuperDislike
+purges continue to use `superdislike/`, and approved Arcadia Music Tools records
+use `mediatool/`. SQLite is the shared audit and restore journal.
 
 `/purge_superdisliked` handles SuperDislikes only and `/quarantine_manifest`
 handles the approved MediaTool report only. `/purge_quarantine` previews or
@@ -232,8 +235,8 @@ Lavalink is only reachable on the internal Docker network by default. The exampl
 compose file mounts the active music library read-only at `/music` for both bot
 and Lavalink. The bot also receives a least-privilege writable admin view at
 `/library_admin/music` plus a writable quarantine destination at
-`/library_admin/quarantine/super_disliked`; Lavalink does not receive those
-writable mounts. Approved Arcadia reports are mounted read-only for the bot only.
+`/library_admin/quarantine`; Lavalink does not receive those writable mounts.
+Approved Arcadia reports are mounted read-only for the bot only.
 
 ## Library reorganization safety
 
