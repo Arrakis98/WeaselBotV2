@@ -78,7 +78,6 @@ def _bot(tmp_path: Path) -> tuple[Any, SQLiteDatabase, Path, Path]:
         library_moderation=LibraryModerationConfig(
             admin_music_path=admin_root,
             quarantine_path=quarantine_root,
-            auto_quarantine_superdislike=False,
         ),
         bot=SimpleNamespace(music_library=admin_root),
     )

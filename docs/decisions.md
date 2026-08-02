@@ -230,12 +230,13 @@ tracks unavailable through `tracks.is_available`. Local playback and `/play_all`
 filter unavailable tracks out, while ratings and metadata remain intact for
 audit and restoration.
 
-Automatic SuperDislike quarantine is disabled by default. When enabled, the
-sequence is: capture current indexed track, save SuperDislike, invoke the shared
-skip action exactly once, then quarantine the captured previous track. If the
-move fails, the rating and skip remain completed. Administrative purge,
-inspection, and restoration commands use record IDs and indexed tracks only;
-they never accept raw filesystem paths.
+Interactive SuperDislike quarantine is mandatory. The sequence is: capture the
+current indexed track, save SuperDislike, invoke the shared skip action exactly
+once, then, only after a successful skip, quarantine the captured previous track
+directly in the quarantine root. Filename collisions receive a numeric suffix
+instead of overwriting an existing file. If the move fails, the rating and skip
+remain completed. Administrative purge, inspection, and restoration commands
+use record IDs and indexed tracks only; they never accept raw filesystem paths.
 
 ## ADR-0016: Invocation-Scoped `/play_all` Artist Exclusions
 

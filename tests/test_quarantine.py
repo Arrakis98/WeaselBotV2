@@ -111,6 +111,27 @@ def test_quarantine_does_not_move_same_track_twice_and_handles_collision(tmp_pat
     assert second.moved == 0
 
 
+def test_flat_quarantine_destination_handles_filename_collision(tmp_path: Path) -> None:
+    bot, database, admin_root, quarantine_root = _bot(tmp_path)
+    existing = quarantine_root / "song.mp3"
+    existing.parent.mkdir(parents=True)
+    existing.write_text("occupied", encoding="utf-8")
+    track = _track(database, admin_root, "Category/Artist/song.mp3")
+    UserRepository(database).upsert(UserRecord(user_id=42, display_name="Admin"))
+
+    result = QuarantineService(bot).quarantine_track(
+        track,
+        guild_id=123,
+        requested_by_user_id=42,
+        reason="auto_superdislike",
+        flat_destination=True,
+    )
+
+    assert result.moved == 1
+    assert existing.read_text(encoding="utf-8") == "occupied"
+    assert (quarantine_root / "song-1.mp3").exists()
+
+
 def test_restore_returns_file_and_makes_track_playable(tmp_path: Path) -> None:
     bot, database, admin_root, quarantine_root = _bot(tmp_path)
     track = _track(database, admin_root, "Artist/song.mp3")
@@ -165,7 +186,6 @@ def _bot(tmp_path: Path) -> tuple[Any, SQLiteDatabase, Path, Path]:
         library_moderation=LibraryModerationConfig(
             admin_music_path=admin_root,
             quarantine_path=quarantine_root,
-            auto_quarantine_superdislike=False,
         ),
         bot=SimpleNamespace(music_library=admin_root),
     )

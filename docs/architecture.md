@@ -272,11 +272,13 @@ is cleared before one shuffled track starts and the rest are queued; when a
 track is actively playing in voice, `/play_all` keeps the existing append
 behavior.
 
-SuperDislike may optionally trigger automatic quarantine. The shared rating
-action captures the current indexed local track, saves the SuperDislike rating,
-invokes the existing skip action exactly once, and only then asks the quarantine
-service to move the captured previous file. If quarantine fails, the rating and
-completed skip remain intact.
+SuperDislike always triggers automatic quarantine after a successful skip. The
+shared rating action captures the current indexed local track, saves the
+SuperDislike rating, invokes the existing skip action exactly once, and only then
+asks the quarantine service to move the captured previous file directly into the
+quarantine root. Collision-safe suffixes prevent silent overwrites. If skip
+cannot complete, the current file is not moved. If quarantine fails, the rating
+and completed skip remain intact.
 
 ### Playlist Service
 
