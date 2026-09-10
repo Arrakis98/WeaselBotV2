@@ -60,9 +60,22 @@ async def test_slash_dislike_replaces_rating_then_skips_current_track(
 
 @pytest.mark.asyncio
 async def test_slash_superdislike_keeps_saved_rating_when_skip_cannot_complete(
-    database: SQLiteDatabase,
+    tmp_path: Path,
 ) -> None:
-    bot = _FakeBot(database)
+    database = SQLiteDatabase(DatabaseConfig(path=tmp_path / "weasel-test.db"))
+    database.initialize()
+    admin_root = tmp_path / "admin_music"
+    quarantine_root = tmp_path / "quarantine"
+    track_path = admin_root / "Artist/current.mp3"
+    track_path.parent.mkdir(parents=True, exist_ok=True)
+    track_path.write_text("audio", encoding="utf-8")
+    bot = _FakeBot(
+        database,
+        moderation=LibraryModerationConfig(
+            admin_music_path=admin_root,
+            quarantine_path=quarantine_root,
+        ),
+    )
     cog = MusicCog(cast(Any, bot))
     guild = _FakeGuild(guild_id=123, voice_client=None)
     interaction = _FakeInteraction(guild=guild)
@@ -79,6 +92,8 @@ async def test_slash_superdislike_keeps_saved_rating_when_skip_cannot_complete(
         rating="superdislike",
     )
     assert bot.player_states.get_or_create(123).current_track == current
+    assert track_path.exists()
+    assert not quarantine_root.exists()
     assert interaction.response_messages == [
         "Saved SuperDislike for current. The bot is not connected to a player."
     ]
@@ -110,14 +125,14 @@ async def test_slash_superdislike_saves_rating_then_invokes_one_skip(
 
 
 @pytest.mark.asyncio
-async def test_slash_superdislike_auto_quarantine_runs_after_one_skip(
+async def test_slash_superdislike_always_quarantines_flat_after_one_skip(
     tmp_path: Path,
 ) -> None:
     database = SQLiteDatabase(DatabaseConfig(path=tmp_path / "weasel-test.db"))
     database.initialize()
     admin_root = tmp_path / "admin_music"
     quarantine_root = tmp_path / "quarantine"
-    track_path = admin_root / "Artist/current.mp3"
+    track_path = admin_root / "Category/Artist/current.mp3"
     track_path.parent.mkdir(parents=True, exist_ok=True)
     track_path.write_text("audio", encoding="utf-8")
     bot = _FakeBot(
@@ -125,14 +140,13 @@ async def test_slash_superdislike_auto_quarantine_runs_after_one_skip(
         moderation=LibraryModerationConfig(
             admin_music_path=admin_root,
             quarantine_path=quarantine_root,
-            auto_quarantine_superdislike=True,
         ),
     )
     cog = MusicCog(cast(Any, bot))
     player = _FakePlayer()
     guild = _FakeGuild(guild_id=123, voice_client=player)
     interaction = _FakeInteraction(guild=guild)
-    current = _indexed_track(database, "Artist/current.mp3")
+    current = _indexed_track(database, "Category/Artist/current.mp3")
     assert current.id is not None
     bot.player_states.get_or_create(123).current_track = current
 
@@ -147,7 +161,7 @@ async def test_slash_superdislike_auto_quarantine_runs_after_one_skip(
     assert stored is not None and stored.is_available is False
     assert record is not None and record.reason == "auto_superdislike"
     assert not track_path.exists()
-    assert (quarantine_root / "superdislike/Artist/current.mp3").exists()
+    assert (quarantine_root / "current.mp3").exists()
 
 
 @pytest.mark.asyncio
@@ -257,9 +271,8 @@ class _FakeBot:
         self.lavalink_available = True
         self.settings = SimpleNamespace(
             bot=SimpleNamespace(music_library=Path("/music")),
+            library_moderation=moderation or LibraryModerationConfig(),
         )
-        if moderation is not None:
-            self.settings.library_moderation = moderation
         self.channels: dict[int, _FakeChannel] = {}
 
     def get_channel(self, channel_id: int) -> _FakeChannel | None:

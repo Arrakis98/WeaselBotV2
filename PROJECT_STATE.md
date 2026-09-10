@@ -62,10 +62,10 @@ A roadmap phase is context, not an active Codex mission.
 Favorites-first shuffle for /play_all and explicit future-queue shuffle.
 ```
 
-The bounded task is implemented on `agent/favorites-first-shuffle` from verified
-`origin/main` commit `35c3ff9`. PR #8 remains a separate open draft at
-`e3762707`; it is not merged and its changes are not prerequisites for this
-mission.
+The bounded task is implemented on `agent/favorites-first-shuffle` from
+`origin/main` commit `dc8ffec`. PR #8 was merged into `main` at
+`dc8ffeca849ebc9325de0acfd9a291b114312937`; its interactive SuperDislike
+quarantine correction is part of the base and must remain intact.
 
 Baseline validation on 2026-09-10 produced 272 passing tests, clean Ruff lint,
 and clean Pyright. Repository-wide Ruff formatting reports pre-existing drift

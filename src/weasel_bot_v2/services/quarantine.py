@@ -108,6 +108,7 @@ class QuarantineService:
         reason: str,
         expected_sha256: str | None = None,
         bucket: str | None = None,
+        flat_destination: bool = False,
     ) -> QuarantineMoveResult:
         builder = _QuarantineResultBuilder()
         record = self._quarantine_one(
@@ -117,6 +118,7 @@ class QuarantineService:
             reason=reason,
             expected_sha256=expected_sha256,
             bucket=bucket,
+            flat_destination=flat_destination,
             builder=builder,
         )
         if record is not None:
@@ -149,6 +151,7 @@ class QuarantineService:
                 reason="purge_superdisliked",
                 expected_sha256=None,
                 bucket="superdislike",
+                flat_destination=False,
                 builder=builder,
             )
             if record is not None:
@@ -208,6 +211,7 @@ class QuarantineService:
         reason: str,
         expected_sha256: str | None,
         bucket: str | None,
+        flat_destination: bool,
         builder: _QuarantineResultBuilder,
     ) -> QuarantineRecord | None:
         if track.id is None or not track.relative_path:
@@ -220,8 +224,11 @@ class QuarantineService:
         try:
             relative = safe_relative_path(track.relative_path)
             source = _resolved_child(self.admin_music_path, relative.as_posix())
-            resolved_bucket = _validated_bucket(bucket or quarantine_bucket_for_reason(reason))
-            destination_relative = Path(resolved_bucket, *relative.parts)
+            if flat_destination:
+                destination_relative = Path(relative.name)
+            else:
+                resolved_bucket = _validated_bucket(bucket or quarantine_bucket_for_reason(reason))
+                destination_relative = Path(resolved_bucket, *relative.parts)
             destination = _collision_safe_path(
                 _resolved_child(
                     self.quarantine_path,

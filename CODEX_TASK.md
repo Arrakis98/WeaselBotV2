@@ -8,12 +8,12 @@ and SuperLikes near the start without changing eligibility or queue contents.
 ## Context
 
 Short sessions should reach personally appreciated tracks quickly while
-remaining random. PR #8 is a separate open SuperDislike fix and must not be
-merged, cherry-picked, or copied into this task.
+remaining random. PR #8's immediate, reversible SuperDislike quarantine fix is
+already merged into the base and must not be removed or regressed.
 
 ## Preconditions
 
-- `origin/main` remains at or descends from verified base `35c3ff9`.
+- `origin/main` remains at or descends from verified base `dc8ffec`.
 - The checkout is clean before task setup.
 - Baseline pytest, Ruff lint, and Pyright pass. The existing repository-wide
   Ruff format drift is recorded separately and is not part of this task.
@@ -51,7 +51,7 @@ Do not push directly to `main`.
   Activity, effects, schema changes, or new dependencies.
 - Changes to rating semantics, quarantine, AMT, Arcadia Infra, production data,
   deployment, rebuild, or restart.
-- PR #8 changes or merge.
+- Regression or removal of PR #8 behavior.
 
 ## Acceptance criteria
 
@@ -78,16 +78,17 @@ Do not push directly to `main`.
 
 ## Delivery
 
-Push the working branch and open a draft PR to `main`. Do not merge or deploy.
+Push the working branch and update PR #9 toward `main`. Merge only with explicit
+owner approval. Do not deploy or restart.
 
 ## Stop conditions
 
 Stop if repository state diverges unexpectedly, tests expose an unrelated gate
 failure that cannot be isolated, secrets or real data are required, or the
-mission would need PR #8, production changes, or another repository.
+mission would need production changes or another repository.
 
 ## Final report
 
-Include the machine and checkout, PR #8 state, synchronization performed, base,
-remote branch, commit SHA, draft PR URL and target, exact validations, CI state,
-limitations, and next small task.
+Include the machine and checkout, PR #8 and PR #9 states, synchronization
+performed, final `main` SHA, exact validations, and confirmation that no deploy
+or restart occurred.

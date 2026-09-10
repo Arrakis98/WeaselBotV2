@@ -25,11 +25,12 @@ Favorites-first shuffle is the active bounded implementation task.
 ```
 
 Work only on `agent/favorites-first-shuffle` and follow the scope in
-`CODEX_TASK.md`. The verified base is `origin/main` at `35c3ff9`.
+`CODEX_TASK.md`. The verified base is `origin/main` at `dc8ffec`.
 
-PR #8 (`agent/fix-superdislike-quarantine`, head `e3762707`) was still open and
-in draft on 2026-09-10. It is independent of this task and must not be merged,
-cherry-picked, or described as synchronized into `main`.
+PR #8 (`agent/fix-superdislike-quarantine`) was merged into `main` as
+`dc8ffeca849ebc9325de0acfd9a291b114312937` on 2026-09-10. Its immediate,
+reversible SuperDislike quarantine behavior is part of the base and must remain
+intact while the favorites-first task is completed.
 
 ## Orchestration model
 

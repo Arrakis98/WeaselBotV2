@@ -38,14 +38,13 @@ class PlayerActionService:
 
         skip_result = await self._playback_service().skip(guild)
         message = f"{rating_result.message} {skip_result.message}"
-        moderation = getattr(self.bot.settings, "library_moderation", None)
-        auto_quarantine = bool(getattr(moderation, "auto_quarantine_superdislike", False))
-        if rating_value == "superdislike" and auto_quarantine and captured_track is not None:
+        if rating_value == "superdislike" and skip_result.ok and captured_track is not None:
             quarantine_result = QuarantineService(self.bot).quarantine_track(
                 captured_track,
                 guild_id=guild.id,
                 requested_by_user_id=user_id,
                 reason="auto_superdislike",
+                flat_destination=True,
             )
             if quarantine_result.moved:
                 message = f"{message} Quarantined from the playable library."
