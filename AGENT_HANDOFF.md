@@ -24,7 +24,7 @@ A mature local-music Discord bot foundation is documented.
 PR #8 and PR #9 are merged. No implementation task is currently selected.
 ```
 
-The verified merged base is `main` at
+The verified feature baseline immediately after PR #9 was
 `7d6dfa1acbda5d54d1c4ce73431bbbbae16948ac`.
 
 PR #8 delivered the immediate, reversible interactive SuperDislike quarantine
