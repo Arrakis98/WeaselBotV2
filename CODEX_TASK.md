@@ -9,7 +9,7 @@ STOP: no implementation task is currently selected.
 PR #8 (interactive SuperDislike quarantine correction) and PR #9
 (favorites-first shuffle) are merged into `main`.
 
-The current verified `main` is:
+The verified feature baseline immediately after PR #9 was:
 
 ```text
 7d6dfa1acbda5d54d1c4ce73431bbbbae16948ac
