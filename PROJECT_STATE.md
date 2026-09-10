@@ -31,9 +31,9 @@ The public repository must remain safe to publish. Private tokens,
 configuration, infrastructure details, runtime state, and user data do not
 belong here.
 
-## Documented current capabilities
+## Current merged capabilities
 
-The current README documents a mature Phase 5 / Phase 6 foundation including:
+The merged project state includes:
 
 - Docker and Lavalink deployment;
 - SQLite persistence;
@@ -46,8 +46,8 @@ The current README documents a mature Phase 5 / Phase 6 foundation including:
 - identity-preserving library reorganization migration support;
 - favorites-first ordering for `/play_all` and explicit future-queue shuffle.
 
-These are documentation-derived claims. Verify the current implementation and
-tests before using them as prerequisites for a new task.
+Verify the current implementation and tests before using these as prerequisites
+for a new task.
 
 ## Roadmap direction
 
@@ -62,7 +62,7 @@ A roadmap phase is context, not an active Codex mission.
 PR #8 (`agent/fix-superdislike-quarantine`) and PR #9
 (`agent/favorites-first-shuffle`) are merged into `main`.
 
-Verified `main` after PR #9:
+The verified feature baseline immediately after PR #9 was:
 
 ```text
 7d6dfa1acbda5d54d1c4ce73431bbbbae16948ac
