@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import inspect
-import random
 from collections.abc import Sequence
 from typing import Any, cast
 
@@ -20,6 +19,7 @@ from weasel_bot_v2.repositories import (
 )
 from weasel_bot_v2.services.audio import AudioPlaybackService
 from weasel_bot_v2.services.control_center import ControlCenterService, OpenControlPanelView
+from weasel_bot_v2.services.favorites_shuffle import FavoritesFirstShuffleService
 from weasel_bot_v2.services.local_library import LocalLibraryService
 from weasel_bot_v2.services.now_playing_panel import (
     NowPlayingPanelRecord,
@@ -210,7 +210,11 @@ class MusicCog(commands.Cog):
             )
             return
 
-        random.shuffle(tracks)
+        tracks = FavoritesFirstShuffleService(RatingRepository(self.bot.database)).shuffle(
+            tracks,
+            guild_id=guild.id,
+            user_id=interaction.user.id,
+        )
         playback = self._playback_service()
         found_count = policy_pool.total_indexed_play_all
         panel = NowPlayingPanelService(self.bot)

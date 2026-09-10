@@ -168,6 +168,20 @@ legacy `play_all_artist_exclusions` and `play_all_policy` tables remain in the
 schema for backward compatibility and possible future presets, but they are not
 the current Discord-facing artist exclusion UI.
 
+Once the eligible `/play_all` batch has been resolved, a favorites-first shuffle
+uses the invoking user's guild-scoped ratings to divide occurrences into
+SuperLikes, Likes, and all other eligible tracks. Each group is shuffled without
+replacement. A favorite appears after zero to two initial other tracks, then
+favorites are separated by one to three other tracks while stock remains.
+SuperLike is selected with probability two-thirds when both positive groups are
+available. This operation is a permutation only: ratings never bypass Play All
+eligibility, exclusions, exceptions, or availability checks.
+
+Explicit queue shuffle uses the same policy for the clicking user and replaces
+only the order of the existing future occurrences. It does not mutate the
+current track, recently played history, volume, pause, or loop state. Ratings are
+loaded in one guild-and-user-scoped repository query rather than once per track.
+
 Phase 5.0 stores one active user rating per local track and guild. Users can set
 Like, SuperLike, Dislike, or SuperDislike from slash commands or the Now Playing
 panel; setting the same rating again confirms it and refreshes the row, while

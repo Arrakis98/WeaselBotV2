@@ -21,13 +21,16 @@ Current state:
 
 ```text
 A mature local-music Discord bot foundation is documented.
-One bounded interactive SuperDislike quarantine correction is active on
-agent/fix-superdislike-quarantine.
+Favorites-first shuffle is the active bounded implementation task.
 ```
 
-Implementation agents must follow the exact scope and stop conditions in
-`CODEX_TASK.md`. Do not extend this task into Arcadia Music Tools, administrative
-purge layout, deployment, or production data.
+Work only on `agent/favorites-first-shuffle` and follow the scope in
+`CODEX_TASK.md`. The verified base is `origin/main` at `dc8ffec`.
+
+PR #8 (`agent/fix-superdislike-quarantine`) was merged into `main` as
+`dc8ffeca849ebc9325de0acfd9a291b114312937` on 2026-09-10. Its immediate,
+reversible SuperDislike quarantine behavior is part of the base and must remain
+intact while the favorites-first task is completed.
 
 ## Orchestration model
 

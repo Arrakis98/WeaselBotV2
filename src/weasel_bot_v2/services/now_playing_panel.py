@@ -15,6 +15,7 @@ from weasel_bot_v2.models import RatingCounts, Track
 from weasel_bot_v2.repositories import RatingRepository, UserRepository
 from weasel_bot_v2.services.application_emojis import ApplicationEmojiRegistry
 from weasel_bot_v2.services.audio import AudioPlaybackService, PlaybackResult
+from weasel_bot_v2.services.favorites_shuffle import FavoritesFirstShuffleService, ShuffleRandom
 from weasel_bot_v2.services.play_all_exception_controls import (
     PLAY_ALL_EXCEPTION_PERMISSION_ERROR,
     can_manage_play_all_exceptions,
@@ -149,8 +150,7 @@ class PanelPayload:
 class PanelRenderer(Protocol):
     mode: PanelRenderMode
 
-    def render(self, bot: Any, snapshot: NowPlayingSnapshot) -> PanelPayload:
-        ...
+    def render(self, bot: Any, snapshot: NowPlayingSnapshot) -> PanelPayload: ...
 
 
 @dataclass(frozen=True)
@@ -415,9 +415,7 @@ class ComponentsV2PanelRenderer:
             container.add_item(discord.ui.TextDisplay(main_text))
 
         container.add_item(
-            discord.ui.TextDisplay(
-                format_components_v2_rating_totals(bot, snapshot.rating_counts)
-            )
+            discord.ui.TextDisplay(format_components_v2_rating_totals(bot, snapshot.rating_counts))
         )
         container.add_item(discord.ui.Separator(spacing=discord.SeparatorSpacing.small))
         for row_index in range(3):
@@ -545,8 +543,7 @@ class NowPlayingPanelService:
             await cast(Any, message).edit(view=DisabledNowPlayingView())
         except Exception as exc:  # noqa: BLE001 - stale panel cleanup is best effort.
             LOGGER.info(
-                "Could not disable stale panel guild_id=%s channel_id=%s message_id=%s "
-                "error=%s",
+                "Could not disable stale panel guild_id=%s channel_id=%s message_id=%s error=%s",
                 guild.id,
                 getattr(getattr(message, "channel", None), "id", "unknown"),
                 getattr(message, "id", "unknown"),
@@ -653,7 +650,11 @@ class NowPlayingPanelService:
 
         async with self.lock_for(guild.id):
             state = self.bot.player_states.get(guild.id)
-            result = shuffle_upcoming_queue(state)
+            result = shuffle_upcoming_queue(
+                state,
+                shuffle_service=FavoritesFirstShuffleService(RatingRepository(self.bot.database)),
+                user_id=interaction.user.id,
+            )
             await self.refresh_locked(
                 guild=guild,
                 channel=cast(discord.abc.Messageable | None, interaction.channel),
@@ -997,12 +998,14 @@ class PanelControlButton(discord.ui.Button[Any]):
             case "pause_resume":
                 await service.run_button_action(
                     interaction,
-                    lambda guild: playback.resume(guild)
-                    if (
-                        service.bot.player_states.get(guild.id) is not None
-                        and service.bot.player_states.get(guild.id).paused
-                    )
-                    else playback.pause(guild),
+                    lambda guild: (
+                        playback.resume(guild)
+                        if (
+                            service.bot.player_states.get(guild.id) is not None
+                            and service.bot.player_states.get(guild.id).paused
+                        )
+                        else playback.pause(guild)
+                    ),
                     reason="button:pause_resume",
                 )
             case "next":
@@ -1390,15 +1393,29 @@ def more_action_values() -> tuple[str, ...]:
     return tuple(option.value for option in MORE_ACTION_OPTIONS)
 
 
-def shuffle_upcoming_queue(state: GuildPlayerState | None) -> PlaybackResult:
+def shuffle_upcoming_queue(
+    state: GuildPlayerState | None,
+    *,
+    shuffle_service: FavoritesFirstShuffleService | None = None,
+    user_id: int | None = None,
+    rng: ShuffleRandom = random,
+) -> PlaybackResult:
     if state is None or state.queue_length == 0:
         return PlaybackResult(ok=False, message="The queue is empty.")
     if state.queue_length == 1:
         return PlaybackResult(ok=False, message="Only one upcoming track is queued.")
     current = state.current_track
     before = list(state.upcoming)
-    random.shuffle(state.upcoming)
-    if state.upcoming == before:
+    if shuffle_service is not None and user_id is not None:
+        state.upcoming = shuffle_service.shuffle(
+            state.upcoming,
+            guild_id=state.guild_id,
+            user_id=user_id,
+            rng=rng,
+        )
+    else:
+        rng.shuffle(state.upcoming)
+    if shuffle_service is None and state.upcoming == before:
         state.upcoming.reverse()
     assert state.current_track is current
     return PlaybackResult(ok=True, message=f"Shuffled {state.queue_length} upcoming tracks.")

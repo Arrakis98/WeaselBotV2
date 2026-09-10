@@ -1,6 +1,6 @@
 # Weasel Bot V2 - Project State
 
-Last reviewed from repository documentation: 2026-08-02.
+Last reviewed against the checkout and GitHub: 2026-09-10.
 
 This file records durable project state for future ChatGPT Work, Codex, and
 agent sessions. Verify claims against the actual branch, commits, pull requests,
@@ -59,15 +59,18 @@ A roadmap phase is context, not an active Codex mission.
 ## Active task
 
 ```text
-Interactive SuperDislike quarantine correction is active on
-agent/fix-superdislike-quarantine.
+Favorites-first shuffle for /play_all and explicit future-queue shuffle.
 ```
 
-`CODEX_TASK.md` defines the bounded mission: remove the opt-in gate from
-interactive SuperDislike quarantine, move the successfully skipped captured file
-directly into the quarantine root with collision-safe naming, and preserve audit
-and restoration behavior. Arcadia Music Tools, administrative purge layout, and
-production operations are explicitly outside the task.
+The bounded task is implemented on `agent/favorites-first-shuffle` from
+`origin/main` commit `dc8ffec`. PR #8 was merged into `main` at
+`dc8ffeca849ebc9325de0acfd9a291b114312937`; its interactive SuperDislike
+quarantine correction is part of the base and must remain intact.
+
+Baseline validation on 2026-09-10 produced 272 passing tests, clean Ruff lint,
+and clean Pyright. Repository-wide Ruff formatting reports pre-existing drift
+in nine files; the active task validates formatting only for modified Python
+files and does not reformat unrelated code.
 
 ## Safety boundaries
 

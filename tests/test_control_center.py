@@ -456,6 +456,91 @@ async def test_successful_play_all_acknowledgement_includes_control_panel_opener
 
 
 @pytest.mark.asyncio
+async def test_play_all_starts_from_personalized_sequence(database: SQLiteDatabase) -> None:
+    bot = _FakeBot(database)
+    cog = MusicCog(cast(Any, bot))
+    tracks = [_indexed_track(database, f"Rock/Artist/other-{index}.mp3") for index in range(8)]
+    favorite = _indexed_track(database, "Rock/Artist/favorite.mp3")
+    tracks.append(favorite)
+    UserRepository(database).upsert(UserRecord(user_id=42, display_name="Listener"))
+    RatingRepository(database).set_rating(
+        Rating(guild_id=123, user_id=42, track_id=favorite.id or 0, rating="like")
+    )
+    _patch_cog_services(cog, library=_FakeLibrary(tracks), playback=_FakePlayback(bot))
+    guild = _FakeGuild(guild_id=123, voice_client=object())
+    interaction = _FakeInteraction(guild=guild)
+
+    await _run_slash(cog, "play_all", interaction)
+
+    state = bot.player_states.get_or_create(123)
+    produced_sequence = [state.current_track, *state.upcoming]
+    assert produced_sequence.index(favorite) <= 2
+
+
+@pytest.mark.asyncio
+async def test_play_all_personalizes_only_new_active_session_batch(
+    database: SQLiteDatabase,
+) -> None:
+    bot = _FakeBot(database)
+    cog = MusicCog(cast(Any, bot))
+    current = _indexed_track(database, "Rock/Artist/current.mp3")
+    already_queued = _indexed_track(database, "Rock/Artist/already-queued.mp3")
+    tracks = [_indexed_track(database, f"Rock/Artist/other-{index}.mp3") for index in range(8)]
+    favorite = _indexed_track(database, "Rock/Artist/favorite.mp3")
+    tracks.append(favorite)
+    UserRepository(database).upsert(UserRecord(user_id=42, display_name="Listener"))
+    RatingRepository(database).set_rating(
+        Rating(guild_id=123, user_id=42, track_id=favorite.id or 0, rating="superlike")
+    )
+    _patch_cog_services(cog, library=_FakeLibrary(tracks), playback=_FakePlayback(bot))
+    guild = _FakeGuild(guild_id=123, voice_client=object())
+    interaction = _FakeInteraction(guild=guild)
+    state = bot.player_states.get_or_create(123)
+    state.current_track = current
+    state.upcoming = [already_queued]
+
+    await _run_slash(cog, "play_all", interaction)
+
+    assert state.current_track == current
+    assert state.upcoming[0] == already_queued
+    assert state.upcoming[1:].index(favorite) <= 2
+
+
+@pytest.mark.asyncio
+async def test_control_center_shuffle_uses_clicking_users_ratings(
+    database: SQLiteDatabase,
+) -> None:
+    bot = _FakeBot(database)
+    guild = _FakeGuild(guild_id=123, voice_client=object())
+    interaction = _FakeInteraction(guild=guild)
+    current = _indexed_track(database, "Artist/current.mp3")
+    previous = _indexed_track(database, "Artist/previous.mp3")
+    favorite = _indexed_track(database, "Artist/favorite.mp3")
+    others = [_indexed_track(database, f"Artist/other-{index}.mp3") for index in range(8)]
+    UserRepository(database).upsert(UserRecord(user_id=42, display_name="Listener"))
+    RatingRepository(database).set_rating(
+        Rating(guild_id=123, user_id=42, track_id=favorite.id or 0, rating="like")
+    )
+    state = bot.player_states.get_or_create(123)
+    state.current_track = current
+    state.recently_played = [previous]
+    state.upcoming = [*others, favorite]
+    state.volume = 130
+    state.loop_current = True
+
+    await ControlCenterService(bot).run_action(  # type: ignore[arg-type]
+        interaction,  # type: ignore[arg-type]
+        "shuffle",
+    )
+
+    assert state.upcoming.index(favorite) <= 2
+    assert state.current_track == current
+    assert state.recently_played == [previous]
+    assert state.volume == 130
+    assert state.loop_current is True
+
+
+@pytest.mark.asyncio
 async def test_play_all_refreshes_existing_public_panel_without_duplicate(
     database: SQLiteDatabase,
 ) -> None:
