@@ -333,3 +333,25 @@ Dependent ratings, volume overrides, play history, quarantine audit records,
 playlists, and Play All exception records remain attached to the existing track
 identity. If a missing track later returns at the same relative path, the normal
 local upsert path marks it available again.
+
+## ADR-0020: Invocation-user favorites-first shuffle
+
+- Status: Accepted
+- Date: 2026-09-10
+
+`/play_all` and explicit future-queue shuffle order eligible occurrences using
+the invoking user's ratings in the current guild. The policy never changes the
+eligible set and never duplicates, merges, or removes queue occurrences.
+
+Eligible occurrences are shuffled independently as SuperLikes, Likes, and
+Others. The sequence begins with zero to two Others before the first favorite,
+then places one to three Others between favorites while available. When both
+favorite groups remain, each favorite slot selects SuperLike with probability
+two-thirds and Like with probability one-third, independently of group size.
+
+The implementation uses an injectable random generator for deterministic tests
+and loads ratings in one repository query. A new `/play_all` session starts the
+first occurrence in the resulting sequence; an active session appends only the
+newly ordered batch. Explicit shuffle reorders only the existing future queue
+and preserves the current player session and back history. Dislikes receive no
+special ordering in this decision.

@@ -39,6 +39,30 @@ class RatingRepository:
 
         return _rating_from_row(row) if row else None
 
+    def ratings_for_tracks(
+        self,
+        guild_id: int,
+        user_id: int,
+        track_ids: list[int],
+    ) -> dict[int, str]:
+        requested_track_ids = set(track_ids)
+        if not requested_track_ids:
+            return {}
+        with self.database.connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT track_id, rating
+                FROM ratings
+                WHERE guild_id = ? AND user_id = ?
+                """,
+                (guild_id, user_id),
+            ).fetchall()
+        return {
+            int(row["track_id"]): str(row["rating"])
+            for row in rows
+            if int(row["track_id"]) in requested_track_ids
+        }
+
     def counts_for_track(self, guild_id: int, track_id: int) -> RatingCounts:
         with self.database.connect() as connection:
             rows = connection.execute(

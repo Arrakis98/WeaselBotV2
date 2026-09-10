@@ -1,6 +1,6 @@
 # Weasel Bot V2 - Project State
 
-Last reviewed from repository documentation: 2026-08-02.
+Last reviewed against the checkout and GitHub: 2026-09-10.
 
 This file records durable project state for future ChatGPT Work, Codex, and
 agent sessions. Verify claims against the actual branch, commits, pull requests,
@@ -59,11 +59,18 @@ A roadmap phase is context, not an active Codex mission.
 ## Active task
 
 ```text
-No active implementation task is selected.
+Favorites-first shuffle for /play_all and explicit future-queue shuffle.
 ```
 
-`CODEX_TASK.md` intentionally instructs implementation agents to stop until the
-project lead defines one bounded mission with explicit acceptance criteria.
+The bounded task is implemented on `agent/favorites-first-shuffle` from verified
+`origin/main` commit `35c3ff9`. PR #8 remains a separate open draft at
+`e3762707`; it is not merged and its changes are not prerequisites for this
+mission.
+
+Baseline validation on 2026-09-10 produced 272 passing tests, clean Ruff lint,
+and clean Pyright. Repository-wide Ruff formatting reports pre-existing drift
+in nine files; the active task validates formatting only for modified Python
+files and does not reformat unrelated code.
 
 ## Safety boundaries
 

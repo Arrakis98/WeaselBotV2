@@ -7,7 +7,9 @@ from typing import Any, cast
 
 import discord
 
+from weasel_bot_v2.repositories import RatingRepository
 from weasel_bot_v2.services.audio import AudioPlaybackService, PlaybackResult
+from weasel_bot_v2.services.favorites_shuffle import FavoritesFirstShuffleService
 from weasel_bot_v2.services.now_playing_panel import (
     NowPlayingPanelService,
     NowPlayingSnapshot,
@@ -447,8 +449,9 @@ class ControlCenterService:
             "next": playback.skip,
             "stop": playback.stop,
             "loop": lambda current_guild: playback.toggle_loop(current_guild.id),
-            "shuffle": lambda current_guild: shuffle_upcoming_queue(
-                self.bot.player_states.get(current_guild.id)
+            "shuffle": lambda current_guild: self._shuffle_queue(
+                current_guild.id,
+                interaction.user.id,
             ),
             "volume_down": lambda current_guild: playback.change_volume(
                 current_guild, -VOLUME_STEP
@@ -472,8 +475,7 @@ class ControlCenterService:
     ) -> Awaitable[PlaybackResult] | PlaybackResult:
         playback = AudioPlaybackService(self.bot, self.bot.settings.bot.music_library)
         if action_key == "shuffle_queue":
-            state = self.bot.player_states.get(guild.id)
-            return shuffle_upcoming_queue(state)
+            return self._shuffle_queue(guild.id, interaction.user.id)
         if action_key == "reset_volume":
             return playback.reset_current_track_volume(guild)
         if action_key == "toggle_playall_exception":
@@ -492,6 +494,13 @@ class ControlCenterService:
         if action_key == "leave":
             return playback.leave(guild)
         return PlaybackResult(ok=False, message="That advanced action is not available.")
+
+    def _shuffle_queue(self, guild_id: int, user_id: int) -> PlaybackResult:
+        return shuffle_upcoming_queue(
+            self.bot.player_states.get(guild_id),
+            shuffle_service=FavoritesFirstShuffleService(RatingRepository(self.bot.database)),
+            user_id=user_id,
+        )
 
 
 class OpenControlPanelView(discord.ui.View):
@@ -685,9 +694,7 @@ def confirmation_text(action_key: str) -> str:
 
 
 def control_center_custom_ids() -> tuple[str, ...]:
-    return tuple(spec.custom_id for spec in CONTROL_CENTER_SPECS) + (
-        OPEN_CONTROL_PANEL_CUSTOM_ID,
-    )
+    return tuple(spec.custom_id for spec in CONTROL_CENTER_SPECS) + (OPEN_CONTROL_PANEL_CUSTOM_ID,)
 
 
 def _control_disabled(key: str, snapshot: NowPlayingSnapshot) -> bool:

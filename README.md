@@ -220,6 +220,15 @@ records. `/play_local`, `/search_local`, current playback, existing
 queue contents, ratings, quarantine administration, restoration, and future
 playlists are unchanged.
 
+After those eligibility rules are applied, `/play_all` personalizes only the
+order of its new batch for the invoking user in the current guild. Likes and
+SuperLikes are interleaved near the beginning with random gaps of eligible
+unrated or otherwise rated tracks; SuperLikes are favored when both positive
+groups are available. The same ordering is used when a listener explicitly
+shuffles the existing future queue. Current playback, existing queued batches,
+track eligibility, ratings, volume, loop state, and back history are not changed
+by this ordering policy.
+
 `/library_scan` reconciles the SQLite local index with the configured music root.
 It upserts supported files currently visible under the mount and marks previously
 available local rows unavailable when their relative path no longer exists on

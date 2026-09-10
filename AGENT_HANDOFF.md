@@ -21,11 +21,15 @@ Current state:
 
 ```text
 A mature local-music Discord bot foundation is documented.
-No active implementation task is currently selected.
+Favorites-first shuffle is the active bounded implementation task.
 ```
 
-Implementation agents must stop when `CODEX_TASK.md` contains the no-active-task
-state. The project-lead agent must first prepare one bounded task.
+Work only on `agent/favorites-first-shuffle` and follow the scope in
+`CODEX_TASK.md`. The verified base is `origin/main` at `35c3ff9`.
+
+PR #8 (`agent/fix-superdislike-quarantine`, head `e3762707`) was still open and
+in draft on 2026-09-10. It is independent of this task and must not be merged,
+cherry-picked, or described as synchronized into `main`.
 
 ## Orchestration model
 

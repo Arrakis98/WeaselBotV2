@@ -619,6 +619,28 @@ def test_shuffle_empty_or_single_queue_behavior(database: SQLiteDatabase) -> Non
 
 
 @pytest.mark.asyncio
+async def test_public_shuffle_button_uses_clicking_users_ratings(
+    database: SQLiteDatabase,
+) -> None:
+    bot = _FakeBot(database)
+    guild = _FakeGuild(guild_id=123)
+    interaction = _FakeInteraction(guild=guild, channel=_FakeChannel(channel_id=10))
+    favorite = _indexed_track(database, "favorite.mp3")
+    others = [_indexed_track(database, f"other-{index}.mp3") for index in range(8)]
+    UserRepository(database).upsert(UserRecord(user_id=42, display_name="Tester"))
+    RatingRepository(database).set_rating(
+        Rating(guild_id=123, user_id=42, track_id=favorite.id or 0, rating="superlike")
+    )
+    state = bot.player_states.get_or_create(123)
+    state.current_track = _indexed_track(database, "current.mp3")
+    state.upcoming = [*others, favorite]
+
+    await NowPlayingPanelService(bot).shuffle_queue(interaction)  # type: ignore[arg-type]
+
+    assert state.upcoming.index(favorite) <= 2
+
+
+@pytest.mark.asyncio
 async def test_refresh_creates_then_edits_authoritative_panel(database: SQLiteDatabase) -> None:
     bot = _FakeBot(database)
     guild = _FakeGuild(guild_id=123)
