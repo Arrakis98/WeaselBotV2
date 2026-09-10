@@ -93,7 +93,7 @@
 * `Same artist`. 🎙️
 * `Same category`. 🗂️
 * Radio locale basée sur les dossiers et métadonnées. 📻
-* Favoriser Likes et SuperLikes. ❤️
+* Favoriser Likes et SuperLikes. ✅
 * Exclusions d'artistes à l'invocation pour `/play_all`, exceptions persistantes par piste et gestion compacte via Discord. ✅
 * Réduire ou exclure Dislikes et SuperDislikes selon les réglages. 🚫
 * Tenir compte des utilisateurs présents dans le salon vocal. 👥

@@ -31,9 +31,9 @@ The public repository must remain safe to publish. Private tokens,
 configuration, infrastructure details, runtime state, and user data do not
 belong here.
 
-## Documented current capabilities
+## Current merged capabilities
 
-The current README documents a mature Phase 5 / Phase 6 foundation including:
+The merged project state includes:
 
 - Docker and Lavalink deployment;
 - SQLite persistence;
@@ -43,10 +43,11 @@ The current README documents a mature Phase 5 / Phase 6 foundation including:
 - user ratings and per-track volume presets;
 - Play All exclusions and exceptions;
 - reversible SuperDislike and approved Arcadia quarantine workflows;
-- identity-preserving library reorganization migration support.
+- identity-preserving library reorganization migration support;
+- favorites-first ordering for `/play_all` and explicit future-queue shuffle.
 
-These are documentation-derived claims. Verify the current implementation and
-tests before using them as prerequisites for a new task.
+Verify the current implementation and tests before using these as prerequisites
+for a new task.
 
 ## Roadmap direction
 
@@ -56,21 +57,30 @@ Mode, production hardening, a web control center, and optional local AI.
 
 A roadmap phase is context, not an active Codex mission.
 
-## Active task
+## Current merged state
+
+PR #8 (`agent/fix-superdislike-quarantine`) and PR #9
+(`agent/favorites-first-shuffle`) are merged into `main`.
+
+The verified feature baseline immediately after PR #9 was:
 
 ```text
-Favorites-first shuffle for /play_all and explicit future-queue shuffle.
+7d6dfa1acbda5d54d1c4ce73431bbbbae16948ac
 ```
 
-The bounded task is implemented on `agent/favorites-first-shuffle` from
-`origin/main` commit `dc8ffec`. PR #8 was merged into `main` at
-`dc8ffeca849ebc9325de0acfd9a291b114312937`; its interactive SuperDislike
-quarantine correction is part of the base and must remain intact.
+The combined post-conflict validation reported on 2026-09-10 was:
 
-Baseline validation on 2026-09-10 produced 272 passing tests, clean Ruff lint,
-and clean Pyright. Repository-wide Ruff formatting reports pre-existing drift
-in nine files; the active task validates formatting only for modified Python
-files and does not reformat unrelated code.
+```text
+pytest: 287 passed, 1 known third-party warning
+ruff check: passed
+ruff format check: 8 modified Python files compliant
+pyright: 0 errors, 0 warnings
+git diff --check: passed
+```
+
+No implementation mission is currently selected. `CODEX_TASK.md` is intentionally
+in its explicit stop state until the project owner / project lead defines the
+next bounded task.
 
 ## Safety boundaries
 

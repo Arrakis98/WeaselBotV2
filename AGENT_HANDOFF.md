@@ -21,16 +21,20 @@ Current state:
 
 ```text
 A mature local-music Discord bot foundation is documented.
-Favorites-first shuffle is the active bounded implementation task.
+PR #8 and PR #9 are merged. No implementation task is currently selected.
 ```
 
-Work only on `agent/favorites-first-shuffle` and follow the scope in
-`CODEX_TASK.md`. The verified base is `origin/main` at `dc8ffec`.
+The verified feature baseline immediately after PR #9 was
+`7d6dfa1acbda5d54d1c4ce73431bbbbae16948ac`.
 
-PR #8 (`agent/fix-superdislike-quarantine`) was merged into `main` as
-`dc8ffeca849ebc9325de0acfd9a291b114312937` on 2026-09-10. Its immediate,
-reversible SuperDislike quarantine behavior is part of the base and must remain
-intact while the favorites-first task is completed.
+PR #8 delivered the immediate, reversible interactive SuperDislike quarantine
+correction. PR #9 delivered favorites-first ordering for `/play_all` and explicit
+future-queue shuffle. Both behaviors are now part of `main` and must remain
+intact in future work.
+
+`CODEX_TASK.md` is in an explicit stop state. Do not resume an old working branch
+or infer the next mission from the roadmap; wait for one new bounded task to be
+selected explicitly.
 
 ## Orchestration model
 
