@@ -9,7 +9,7 @@ import discord
 import pytest
 
 from weasel_bot_v2.cogs.music import MusicCog
-from weasel_bot_v2.config import DatabaseConfig
+from weasel_bot_v2.config import DatabaseConfig, LibraryModerationConfig
 from weasel_bot_v2.database import SQLiteDatabase
 from weasel_bot_v2.models import Rating, Track, UserRecord
 from weasel_bot_v2.repositories import (
@@ -861,7 +861,10 @@ class _FakeBot:
         self.player_states = PlayerStateStore()
         self.now_playing_panels = NowPlayingPanelRegistry()
         self.lavalink_available = True
-        self.settings = SimpleNamespace(bot=SimpleNamespace(music_library=Path("/music")))
+        self.settings = SimpleNamespace(
+            bot=SimpleNamespace(music_library=Path("/music")),
+            library_moderation=LibraryModerationConfig(),
+        )
         self.channels: dict[int, _FakeChannel] = {}
         self.application_emoji_registry = ApplicationEmojiRegistry.empty()
 

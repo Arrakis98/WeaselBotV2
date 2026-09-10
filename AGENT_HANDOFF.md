@@ -21,11 +21,13 @@ Current state:
 
 ```text
 A mature local-music Discord bot foundation is documented.
-No active implementation task is currently selected.
+One bounded interactive SuperDislike quarantine correction is active on
+agent/fix-superdislike-quarantine.
 ```
 
-Implementation agents must stop when `CODEX_TASK.md` contains the no-active-task
-state. The project-lead agent must first prepare one bounded task.
+Implementation agents must follow the exact scope and stop conditions in
+`CODEX_TASK.md`. Do not extend this task into Arcadia Music Tools, administrative
+purge layout, deployment, or production data.
 
 ## Orchestration model
 

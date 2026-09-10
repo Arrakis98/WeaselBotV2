@@ -59,11 +59,15 @@ A roadmap phase is context, not an active Codex mission.
 ## Active task
 
 ```text
-No active implementation task is selected.
+Interactive SuperDislike quarantine correction is active on
+agent/fix-superdislike-quarantine.
 ```
 
-`CODEX_TASK.md` intentionally instructs implementation agents to stop until the
-project lead defines one bounded mission with explicit acceptance criteria.
+`CODEX_TASK.md` defines the bounded mission: remove the opt-in gate from
+interactive SuperDislike quarantine, move the successfully skipped captured file
+directly into the quarantine root with collision-safe naming, and preserve audit
+and restoration behavior. Arcadia Music Tools, administrative purge layout, and
+production operations are explicitly outside the task.
 
 ## Safety boundaries
 
