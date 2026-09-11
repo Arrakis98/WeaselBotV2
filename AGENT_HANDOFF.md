@@ -21,20 +21,17 @@ Current state:
 
 ```text
 A mature local-music Discord bot foundation is documented.
-PR #8 and PR #9 are merged. No implementation task is currently selected.
+Weighted rating shuffle correction is the active bounded implementation task.
 ```
 
-The verified feature baseline immediately after PR #9 was
-`7d6dfa1acbda5d54d1c4ce73431bbbbae16948ac`.
+The active working branch is `fix/weighted-rating-shuffle`, based on `main` at
+`22f0cb1c22b9a47232b69eb857a696327a8ca9cb`.
 
 PR #8 delivered the immediate, reversible interactive SuperDislike quarantine
-correction. PR #9 delivered favorites-first ordering for `/play_all` and explicit
-future-queue shuffle. Both behaviors are now part of `main` and must remain
-intact in future work.
-
-`CODEX_TASK.md` is in an explicit stop state. Do not resume an old working branch
-or infer the next mission from the roadmap; wait for one new bounded task to be
-selected explicitly.
+correction. PR #9 delivered the shared personalized ordering used by `/play_all`
+and explicit future-queue shuffle. PR #10 closed the completed mission state.
+The current task keeps that integration but replaces the overly stacked ordering
+policy with the bounded weighted mix defined in `CODEX_TASK.md`.
 
 ## Orchestration model
 

@@ -8,10 +8,12 @@ from weasel_bot_v2.models import Track
 from weasel_bot_v2.repositories import RatingRepository
 
 
+FAVORITE_GROUPS = frozenset({"superlike", "like"})
+NEGATIVE_RATINGS = frozenset({"dislike", "superdislike"})
+
+
 class ShuffleRandom(Protocol):
     def shuffle(self, x: list[Any]) -> None: ...
-
-    def randint(self, a: int, b: int) -> int: ...
 
     def random(self) -> float: ...
 
@@ -22,37 +24,45 @@ def favorites_first_shuffle(
     *,
     rng: ShuffleRandom = random,
 ) -> list[Track]:
-    """Return a personalized permutation without mutating the input sequence."""
-    superlikes: list[Track] = []
-    likes: list[Track] = []
-    others: list[Track] = []
+    """Return a rating-weighted permutation without mutating the input sequence."""
+    buckets: dict[str, list[Track]] = {
+        "superlike": [],
+        "like": [],
+        "neutral": [],
+        "dislike": [],
+    }
     for occurrence in occurrences:
-        rating = ratings_by_track_id.get(occurrence.id) if occurrence.id is not None else None
+        rating = (
+            ratings_by_track_id.get(occurrence.id)
+            if occurrence.id is not None
+            else None
+        )
         if rating == "superlike":
-            superlikes.append(occurrence)
+            buckets["superlike"].append(occurrence)
         elif rating == "like":
-            likes.append(occurrence)
+            buckets["like"].append(occurrence)
+        elif rating in NEGATIVE_RATINGS:
+            buckets["dislike"].append(occurrence)
         else:
-            others.append(occurrence)
+            buckets["neutral"].append(occurrence)
 
-    _shuffle(rng, superlikes)
-    _shuffle(rng, likes)
-    _shuffle(rng, others)
-    if not superlikes and not likes:
-        return others
+    for values in buckets.values():
+        _shuffle(rng, values)
 
     shuffled: list[Track] = []
-    initial_other_count = rng.randint(0, min(2, len(others)))
-    _take_others(shuffled, others, initial_other_count)
+    total = len(occurrences)
+    previous_group: str | None = None
 
-    while superlikes or likes:
-        shuffled.append(_take_favorite(superlikes, likes, rng))
-        if not superlikes and not likes:
-            break
-        other_count = rng.randint(1, min(3, len(others))) if others else 0
-        _take_others(shuffled, others, other_count)
+    for position in range(total):
+        if previous_group in FAVORITE_GROUPS and buckets["neutral"]:
+            group = "neutral"
+        else:
+            progress = 0.0 if total <= 1 else position / (total - 1)
+            group = _choose_group(buckets, _weights_for_progress(progress), rng)
 
-    shuffled.extend(others)
+        shuffled.append(buckets[group].pop())
+        previous_group = group
+
     return shuffled
 
 
@@ -73,21 +83,51 @@ class FavoritesFirstShuffleService:
         return favorites_first_shuffle(occurrences, ratings, rng=rng)
 
 
-def _take_favorite(
-    superlikes: list[Track],
-    likes: list[Track],
+def _weights_for_progress(progress: float) -> dict[str, float]:
+    if progress < 0.25:
+        return {
+            "superlike": 0.25,
+            "like": 0.20,
+            "neutral": 0.55,
+            "dislike": 0.0,
+        }
+    if progress < 0.70:
+        return {
+            "superlike": 0.15,
+            "like": 0.15,
+            "neutral": 0.65,
+            "dislike": 0.05,
+        }
+    return {
+        "superlike": 0.05,
+        "like": 0.05,
+        "neutral": 0.40,
+        "dislike": 0.50,
+    }
+
+
+def _choose_group(
+    buckets: Mapping[str, list[Track]],
+    weights: Mapping[str, float],
     rng: ShuffleRandom,
-) -> Track:
-    if superlikes and likes:
-        source = superlikes if rng.random() < (2 / 3) else likes
-    else:
-        source = superlikes or likes
-    return source.pop()
+) -> str:
+    available = [group for group, values in buckets.items() if values]
+    if not available:
+        raise ValueError("cannot choose a shuffle group from empty buckets")
 
+    total_weight = sum(weights.get(group, 0.0) for group in available)
+    if total_weight <= 0:
+        index = min(int(rng.random() * len(available)), len(available) - 1)
+        return available[index]
 
-def _take_others(destination: list[Track], others: list[Track], count: int) -> None:
-    for _ in range(count):
-        destination.append(others.pop())
+    threshold = rng.random() * total_weight
+    cumulative = 0.0
+    for group in available:
+        cumulative += weights.get(group, 0.0)
+        if threshold < cumulative:
+            return group
+
+    return available[-1]
 
 
 def _shuffle(rng: ShuffleRandom, values: list[Track]) -> None:
