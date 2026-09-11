@@ -1,6 +1,6 @@
 # Weasel Bot V2 - Project State
 
-Last reviewed against the checkout and GitHub: 2026-09-10.
+Last reviewed against the checkout and GitHub: 2026-09-11.
 
 This file records durable project state for future ChatGPT Work, Codex, and
 agent sessions. Verify claims against the actual branch, commits, pull requests,
@@ -44,7 +44,8 @@ The merged project state includes:
 - Play All exclusions and exceptions;
 - reversible SuperDislike and approved Arcadia quarantine workflows;
 - identity-preserving library reorganization migration support;
-- favorites-first ordering for `/play_all` and explicit future-queue shuffle.
+- personalized rating-aware ordering for `/play_all` and explicit future-queue
+  shuffle.
 
 Verify the current implementation and tests before using these as prerequisites
 for a new task.
@@ -59,16 +60,17 @@ A roadmap phase is context, not an active Codex mission.
 
 ## Current merged state
 
-PR #8 (`agent/fix-superdislike-quarantine`) and PR #9
-(`agent/favorites-first-shuffle`) are merged into `main`.
+PR #8 (`agent/fix-superdislike-quarantine`), PR #9
+(`agent/favorites-first-shuffle`), and PR #10 (`chore/close-favorites-mission`)
+are merged into `main`.
 
-The verified feature baseline immediately after PR #9 was:
+The current development base for the active correction is:
 
 ```text
-7d6dfa1acbda5d54d1c4ce73431bbbbae16948ac
+22f0cb1c22b9a47232b69eb857a696327a8ca9cb
 ```
 
-The combined post-conflict validation reported on 2026-09-10 was:
+The combined validation immediately after PR #9 reported:
 
 ```text
 pytest: 287 passed, 1 known third-party warning
@@ -78,9 +80,19 @@ pyright: 0 errors, 0 warnings
 git diff --check: passed
 ```
 
-No implementation mission is currently selected. `CODEX_TASK.md` is intentionally
-in its explicit stop state until the project owner / project lead defines the
-next bounded task.
+## Active task
+
+```text
+Replace the overly stacked favorites-first sequence with a weighted rating mix.
+```
+
+The active branch is `fix/weighted-rating-shuffle`. The ordering policy uses
+three playlist zones: favorites have higher probability early, neutral/unrated
+tracks remain prominent throughout, and Dislike/SuperDislike tracks are pushed
+toward the end. Consecutive favorites are avoided while a neutral track remains.
+No playback-history schema or separate never-heard category is part of this task.
+
+See `CODEX_TASK.md` for the exact table, acceptance criteria, and boundaries.
 
 ## Safety boundaries
 
