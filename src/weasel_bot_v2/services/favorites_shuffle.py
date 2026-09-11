@@ -32,7 +32,11 @@ def favorites_first_shuffle(
         "dislike": [],
     }
     for occurrence in occurrences:
-        rating = ratings_by_track_id.get(occurrence.id) if occurrence.id is not None else None
+        rating = (
+            ratings_by_track_id.get(occurrence.id)
+            if occurrence.id is not None
+            else None
+        )
         if rating == "superlike":
             buckets["superlike"].append(occurrence)
         elif rating == "like":
